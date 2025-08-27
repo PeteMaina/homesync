@@ -32,8 +32,10 @@
 
     /* Sidebar */
     .sidebar {
+        position: relative;
       width: 220px;
-      background: rgba(30, 30, 30, 0.9);
+      color: var(--text-light);
+      background: rgba(190, 185, 185, 0.9);
       padding: 1.5rem;
       display: flex;
       flex-direction: column;
@@ -67,6 +69,7 @@
     }
 
     .glass-card {
+      color: var(--text-light);
       background: var(--glass-bg);
       backdrop-filter: blur(20px);
       border: 1.5px solid var(--glass-border);
@@ -142,7 +145,7 @@
     
     <div id="billing" class="page">
       <div class="glass-card">
-        <h3>Water Billing</h3>
+        <h3> 💧 Water Billing</h3>
         <label> 🏠  House Number</label>
         <input type="text" class="input-field" id="house" placeholder="e.g., House 1">
         <label>💧 Water Units Used</label>

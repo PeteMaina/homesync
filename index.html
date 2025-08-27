@@ -12,7 +12,7 @@ html, body {
   width: 100%;
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
-  background: #f1e3e3;
+  background: #ffffff;
   color: #f4f2f1;
   display: flex;
   place-items: center;
@@ -34,9 +34,9 @@ html, body {
 
   /* Slightly glowing corners (non-animated) + elevation */
   box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.35),
-    0 0 0.75px rgba(255, 255, 255, 0.25) inset,
-    0 0 18px rgba(255, 255, 255, 0.08);
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    0 0 0.75px rgba(58, 58, 58, 0.25) inset,
+    0 0 18px rgba(255, 255, 255, 0.8);
 
   overflow: hidden;
 }
@@ -167,10 +167,11 @@ html, body {
     <header class="app-header">
       <div class="brand">
         <img src="icons/billing.png" alt="Home Sync logo" class="brand__icon" />
-        <h1 class="brand__title">Home Sync <br>   <h3>Remind them of their dues</h3> </h1>
+        <h1 class="brand__title">Home Sync  </h1>
+        <br>   <h3>Remind them their dues</h3>
       </div>
 
-      <a class="logout" href="#logout" aria-label="Log out">
+      <a class="logout" href="auth.html" aria-label="Log out">
         <img src="icons/logout.png" alt="" class="logout__icon" />
         <span class="logout__label">Log out</span>
       </a>
