@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homesync</title>
+    <link rel="shortcut icon" href="icons/billing.png" type="image/x-icon">
+
+    <style>
+* { box-sizing: border-box; }
+html, body {
+  width: 100%;
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+  background: #f1e3e3;
+  color: #f4f2f1;
+  display: flex;
+  place-items: center;
+  padding: 10px;
+}
+
+/* Aurora Glassmorphism Card */
+.card {
+  position: relative;
+  width: 100%;
+  border-radius: 24px;
+  /* Background + blur */
+  background: rgba(90, 70, 60, 0.35);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+
+  /* Borders: subtle but noticeable */
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+
+  /* Slightly glowing corners (non-animated) + elevation */
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.35),
+    0 0 0.75px rgba(255, 255, 255, 0.25) inset,
+    0 0 18px rgba(255, 255, 255, 0.08);
+
+  overflow: hidden;
+}
+
+/* Light reflection: soft top-left highlight + bottom-right shadow */
+.card::before,
+.card::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+.card::before {
+  /* top-left highlight */
+  top: 0; left: 0;
+  width: 60%;
+  height: 50%;
+  background: radial-gradient(1200px 600px at -10% -20%,
+              rgba(255, 255, 255, 0.30),
+              rgba(255, 255, 255, 0.08) 40%,
+              transparent 70%);
+  filter: blur(2px);
+}
+.card::after {
+  /* bottom-right soft shadow vignette */
+  right: 0; bottom: 0;
+  width: 70%;
+  height: 60%;
+  background: radial-gradient(900px 600px at 110% 120%,
+              rgba(0, 0, 0, 0.35),
+              rgba(0, 0, 0, 0.15) 40%,
+              transparent 70%);
+}
+
+/* Header layout */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* pushes logout to the right */
+  padding: 20px 24px;
+  gap: 16px;
+}
+
+/* Brand (left) */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.brand__icon {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+.brand__title {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.2vw + 0.6rem, 2rem);
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+/* Logout (right) */
+.logout {
+  display: inline-flex;
+  flex-direction: column;            /* icon above label (like your <br>) */
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+  color: inherit;
+  font-size: 1rem;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.08),
+      rgba(255, 255, 255, 0.02)
+  );
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.22),
+    inset 0 0 0.5px rgba(255, 255, 255, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.logout:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.28),
+    inset 0 0 0.5px rgba(255, 255, 255, 0.45);
+}
+.logout:active {
+  transform: translateY(0);
+}
+.logout__icon {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+  display: block;
+}
+.logout__label {
+  font-weight: 600;
+  opacity: 0.95;
+}
+
+/* Content wrapper */
+.content {
+  padding: 0 24px 28px 24px;
+}
+
+/* Small screens */
+@media (max-width: 420px) {
+  .brand__icon,
+  .logout__icon { width: 44px; height: 44px; }
+  .logout { font-size: 0.95rem; padding: 6px 8px; }
+}
+    </style>
+
+
+</head>
+<body>
+
+  <div class="card">
+    <header class="app-header">
+      <div class="brand">
+        <img src="icons/billing.png" alt="Home Sync logo" class="brand__icon" />
+        <h1 class="brand__title">Home Sync <br>   <h3>Remind them of their dues</h3> </h1>
+      </div>
+
+      <a class="logout" href="#logout" aria-label="Log out">
+        <img src="icons/logout.png" alt="" class="logout__icon" />
+        <span class="logout__label">Log out</span>
+      </a>
+    </header>
+
+    
+    <main class="content">
+     
+
+
+    </main>
+  </div>
+
+</body>
+</html>
+  

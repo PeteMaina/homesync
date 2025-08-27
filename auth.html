@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auth MVP</title>
+  <style>
+    /* ==== Root Colors ==== */
+    :root {
+      --green: #00B894;
+      --green-light: #55EFC4;
+      --blue: #0984E3;
+      --blue-light: #74B9FF;
+      --off-white: #F8F9FA;
+      --charcoal: #2D3436;
+
+      --glass-bg: rgba(77, 76, 76, 0.281);
+      --glass-border: rgba(117, 113, 113, 0.699);
+    }
+
+    body {
+      margin: 0;
+      font-family: "Poppins", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      /*background: linear-gradient(135deg, var(--green) 0%, var(--blue) 100%);*/
+      background-color: #c9c5c5d8;
+      overflow: hidden;
+    }
+
+    /* Aurora background animation 
+    .aurora {
+      position: absolute;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 30%, var(--green-light), transparent 40%),
+                  radial-gradient(circle at 70% 70%, var(--blue-light), transparent 40%);
+      filter: blur(120px);
+      animation: auroraMove 12s ease-in-out infinite alternate;
+    }*/
+
+    @keyframes auroraMove {
+      from { transform: translate(-20%, -20%); }
+      to { transform: translate(20%, 20%); }
+    }
+
+    /* Card Container */
+    .auth-card {
+      position: relative;
+      z-index: 2;
+      width: 350px;
+      padding: 2rem;
+      border-radius: 20px;
+      backdrop-filter: blur(20px);
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 8px 24px rgba(8, 8, 12, 0.5);
+      color: var(--off-white);
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .auth-card h2 {
+      margin-bottom: 1rem;
+      background: linear-gradient(to right, var(--green), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 700;
+    }
+
+    /* Inputs */
+    .auth-input {
+      width: 100%;
+      margin: 0.5rem 0;
+      padding: 1rem 1rem;
+      border-radius: 14px;
+      margin-right: 0.5rem;
+      border: none;
+      outline: none;
+      color: var(--charcoal);
+      background: rgba(255, 255, 255, 0.6);
+      box-shadow: inset 2px 2px 6px rgba(0,0,0,0.1),
+                  inset -2px -2px 6px rgba(255,255,255,0.2);
+    }
+
+    /* Buttons */
+    .auth-btn {
+      width: 100%;
+      margin-top: 1rem;
+      padding: 0.8rem 1rem;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      color: white;
+      background: linear-gradient(to right, var(--green), var(--blue));
+      box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .auth-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+    }
+
+    .auth-link {
+      display: block;
+      margin-top: 1rem;
+      color: var(--blue-light);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+
+    .auth-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Hide all screens except active */
+    .screen { display: none; }
+    .screen.active { display: block; }
+  </style>
+</head>
+<body>
+  <!-- Aurora background -->
+  <div class="aurora"></div>
+
+  <!-- Auth Card -->
+  <div class="auth-card">
+    <!-- Sign In -->
+    <div id="signin" class="screen active">
+      <h2>Welcome Back</h2>
+      <input type="email" class="auth-input" placeholder="Email">
+      <input type="password" class="auth-input" placeholder="Password">
+      <button class="auth-btn" onclick="navigate('home')">Sign In</button>
+      <a href="#" class="auth-link" onclick="switchScreen('signup')">Create Account</a>
+      <a href="#" class="auth-link" onclick="switchScreen('forgot')">Forgot Password?</a>
+    </div>
+
+    <!-- Sign Up -->
+    <div id="signup" class="screen">
+      <h2>Create Account</h2>
+      <input type="text" class="auth-input" placeholder="Full Name">
+      <input type="email" class="auth-input" placeholder="Email">
+      <input type="password" class="auth-input" placeholder="Password">
+      <input type="password" class="auth-input" placeholder="confirm Password">
+      <button class="auth-btn" onclick="navigate('home')">Sign Up</button>
+      <a href="#" class="auth-link" onclick="switchScreen('signin')">Already have an account?</a>
+    </div>
+
+    <!-- Forgot Password -->
+    <div id="forgot" class="screen">
+      <h2>Reset Password</h2>
+      <input type="email" class="auth-input" placeholder="Enter your email">
+      <button class="auth-btn" onclick="navigate('home')">Send Reset Link</button>
+      <a href="#" class="auth-link" onclick="switchScreen('signin')">Back to Sign In</a>
+    </div>
+
+    <!-- Home Screen -->
+    <div id="home" class="screen">
+      <h2>🎉 Logged In</h2>
+      <p>Navigation working as expected!</p>
+      <button class="auth-btn" onclick="switchScreen('signin')">Log Out</button>
+    </div>
+  </div>
+
+  <script>
+    // Switch between Sign In / Sign Up / Forgot
+    function switchScreen(screen) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(screen).classList.add('active');
+    }
+
+    // Simulate navigation
+    function navigate(screen) {
+      switchScreen(screen);
+    }
+  </script>
+</body>
+</html>

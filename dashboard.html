@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <link rel="shortcut icon" href="icons/billing.png" type="image/x-icon">
+</head>
+  <style>
+    :root {
+      --bg-white: #FFFFFF;
+      --bg-dark: #1E1E1E;
+      --glass-bg: rgba(90, 70, 60, 0.35);
+      --glass-border: rgba(255, 255, 255, 0.25);
+      --highlight: rgba(255, 255, 255, 0.1);
+      --green: #00B894;
+      --blue: #0984E3;
+      --text-light: #F5F5F5;
+      --text-dark: #1E1E1E;
+      --text-muted: #B8B8B8;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Poppins", sans-serif;
+      background: var(--bg-white);
+      color: var(--text-dark);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 220px;
+      background: rgba(30, 30, 30, 0.9);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--glass-border);
+    }
+    .sidebar h2 {
+      font-size: 1.3rem;
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+    .nav-link {
+      padding: 0.8rem 1rem;
+      margin-bottom: 0.8rem;
+      border-radius: 12px;
+      color: var(--text-light);
+      text-decoration: none;
+      display: block;
+      transition: all 0.2s ease;
+    }
+    .nav-link:hover, .nav-link.active {
+      background: linear-gradient(to right, var(--green), var(--blue));
+    }
+
+    /* Main Content */
+    .main {
+      flex: 1;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .glass-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      border: 1.5px solid var(--glass-border);
+      border-radius: 18px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      position: relative;
+      box-shadow: -6px -6px 12px var(--highlight),
+                  6px 6px 16px rgba(0,0,0,0.4);
+    }
+
+    .glass-card h3 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+
+    /* Input fields */
+    .input-field {
+      width: 100%;
+      padding: 0.8rem;
+      margin: 0.5rem 0;
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-light);
+    }
+
+    .btn {
+      padding: 0.8rem 1.2rem;
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      cursor: pointer;
+      background: linear-gradient(to right, var(--green), var(--blue));
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+    }
+
+    /* Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      padding: 0.8rem;
+      border-bottom: 1px solid var(--glass-border);
+      text-align: left;
+    }
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  
+  <div class="sidebar">
+    <h2>🏠 </h2>
+    <a href="#" class="nav-link active" onclick="switchPage('billing')"> <img src="icons/home.png" alt="Home" style="margin: 10px; width:30px; height:30px;"> Billing</a>
+    <a href="#" class="nav-link" onclick="switchPage('visitors')"> <img src="icons/tenants.png" alt="tenants" style="margin: 10px; width:30px; height:30px;"> Tenants</a>
+    <a href="#" class="nav-link" onclick="switchPage('concerns')"> <img src="icons/issues.png" alt="concerns" style="margin: 10px; width:30px; height:30px;"> Concerns</a>
+    <a href="#" class="nav-link" onclick="switchPage('visitors')"> <img src="icons/visitors.png" alt="visitors" style="margin: 10px; width:30px; height:30px;"> Visitors</a>
+    <a href="#" class="nav-link" onclick="logout()">Logout</a>
+  </div>
+
+  
+  <div class="main">
+    
+    <div id="billing" class="page">
+      <div class="glass-card">
+        <h3>Water Billing</h3>
+        <label> 🏠  House Number</label>
+        <input type="text" class="input-field" id="house" placeholder="e.g., House 1">
+        <label>💧 Water Units Used</label>
+        <input type="number" class="input-field" id="units" placeholder="Enter units">
+        <button class="btn" onclick="addBill()">Add Bill</button>
+      </div>
+
+      <div class="glass-card">
+        <h3>All Bills</h3>
+        <table id="billsTable">
+          <thead>
+            <tr>
+              <th>House</th>
+              <th>Units</th>
+              <th>Amount (KES)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Concerns Page -->
+    <div id="concerns" class="page" style="display:none;">
+      <div class="glass-card">
+        <h3>Tenant Concerns</h3>
+        <ul>
+          <li>House 2 - Leak in bathroom</li>
+          <li>House 5 - Broken lock</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Visitors Page -->
+    <div id="visitors" class="page" style="display:none;">
+      <div class="glass-card">
+        <h3>Visitor Logs</h3>
+        <ul>
+          <li>12 Feb - John visiting House 3</li>
+          <li>15 Feb - Mary visiting House 6</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ratePerUnit = 200; // KES per water unit
+
+    function switchPage(pageId) {
+      document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+      document.getElementById(pageId).style.display = 'block';
+
+      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    function addBill() {
+      const house = document.getElementById('house').value.trim();
+      const units = parseFloat(document.getElementById('units').value);
+
+      if (!house || isNaN(units) || units < 0) {
+        alert("Please enter valid details");
+        return;
+      }
+
+      const amount = units * ratePerUnit;
+      const row = `<tr><td>${house}</td><td>${units}</td><td>${amount}</td></tr>`;
+      document.querySelector("#billsTable tbody").insertAdjacentHTML("beforeend", row);
+
+      // Reset inputs
+      document.getElementById('house').value = "";
+      document.getElementById('units').value = "";
+    }
+
+    function logout() {
+      alert("Logged out!");
+      location.reload();
+    }
+  </script>
+
+
+
+</body>
+</html>
