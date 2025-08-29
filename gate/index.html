@@ -25,16 +25,20 @@
 
     /* ---------- Page layout ---------- */
     html,body{
+        width:100%;
       height:100%;
       margin:0;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
       -webkit-font-smoothing:antialiased;
       -moz-osx-font-smoothing:grayscale;
-      background: linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
-      color: #e8f0ff;
+      background-image: url("images\ \(1\).jpg");/* background: #646463; ;/*linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);*/
+      color: #001e57;
       overflow-y:auto;
     }
 
+    input {
+        color: #01172e;
+    }
     /* subtle top-left shine */
     body::before{
       content:"";
@@ -58,6 +62,7 @@
       grid-template-columns: 1fr 420px;
       gap:24px;
       z-index:1;
+      color:#01172e;
     }
 
     /* make it stack on small screens */
@@ -70,7 +75,7 @@
       background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
       border-radius: var(--card-radius);
       border: 1px solid var(--glass-border);
-      backdrop-filter: blur(8px) saturate(120%);
+      backdrop-filter: blur(18px) saturate(60%);
       box-shadow: var(--soft-shadow), var(--light-shadow);
       padding:20px;
     }
@@ -90,7 +95,7 @@
       font-size:13px;
       font-weight:600;
       margin-bottom:6px;
-      color: #dcecff;
+      color: #0461d3;
     }
 
     .row { display:flex; gap:12px; }
@@ -105,7 +110,7 @@
       border: none;
       padding:12px 14px;
       background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(0,0,0,0.05));
-      color: #eaf4ff;
+      color: #01172e;
       box-shadow: inset 6px 6px 12px rgba(0,0,0,0.5), inset -4px -4px 8px rgba(255,255,255,0.01);
       outline: none;
       font-size:14px;
@@ -130,7 +135,7 @@
 
     .btn-primary{
       background: linear-gradient(180deg, var(--brand-700), var(--brand-700));
-      color: white;
+      color: rgb(16, 3, 75);
     }
     .btn-ghost{
       background: transparent;
@@ -178,7 +183,7 @@
       width:48px; height:48px; border-radius:10px; flex-shrink:0;
       background: linear-gradient(135deg, var(--brand-700), var(--brand-500));
       display:flex; align-items:center; justify-content:center; font-weight:800;
-      color:white; font-size:18px;
+      color:rgb(255, 255, 255); font-size:18px;
       box-shadow: 2px 6px 14px rgba(0,0,0,0.5);
     }
     .vmeta { font-size:13px; color:#e7f2ff; }
@@ -194,7 +199,7 @@
       border-radius:12px;
       padding:14px;
       display:none;
-      color:white;
+      color:rgb(1, 5, 54);
       box-shadow: 8px 18px 40px rgba(0,0,0,0.6), -4px -6px 18px rgba(255,255,255,0.02);
     }
     .toast.show { display:block; animation:toastIn .18s ease; }
@@ -221,9 +226,10 @@
       <form id="visitorForm" autocomplete="off">
         <div class="row">
           <div class="field">
-            <label for="full_name">Full name <span style="color:var(--brand-500)">*</span></label>
-            <input id="full_name" name="full_name" type="text" placeholder="e.g. John Doe" required />
+            <label for="full_name">Full name <span style="color:#01172e;">*</span></label>
+            <input id="full_name" name="full_name" type="text" placeholder="e.g. John Doe" required style="color:#01172e;"/>
           </div>
+          <br>
           <div class="field">
             <label for="citizen_id">Citizen ID (optional)</label>
             <input id="citizen_id" name="citizen_id" type="text" placeholder="ID / Passport no." />
@@ -242,10 +248,13 @@
         </div>
 
         <div class="row">
-          <div class="field">
-            <label for="house_number">House number visited <span style="color:var(--brand-500)">*</span></label>
-            <input id="house_number" name="house_number" type="text" placeholder="House # or Flat # (e.g. B12)" required />
-          </div>
+            <div>
+                    <div class="field">
+                        <label for="house_number">House number visited <span style="color:var(--brand-500)">*</span></label>
+                        <input id="house_number" name="house_number" type="text" placeholder="House # or Flat # (e.g. B12)" required />
+                    </div>
+            </div>
+          <br>
           <div class="field">
             <label for="time_in">Time in (optional)</label>
             <input id="time_in" name="time_in" type="datetime-local" />

@@ -1,9 +1,11 @@
 <?php
 // api/config.php — update these to match your environment
-$DB_HOST = '127.0.0.1';
+$DB_HOST = 'localhost';
 $DB_NAME = 'homesync';
 $DB_USER = 'root';
 $DB_PASS = ''; // put your local DB password
+
+
 
 $options = [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
