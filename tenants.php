@@ -1,12 +1,13 @@
+
 <?php
 session_start();
 require_once 'db_config.php';
 
 // Check if user is logged in
-if (!isset($_SESSION['admin_id'])) {
+/*if (!isset($_SESSION['admin_id'])) {
     header("Location: login.php");
     exit();
-}
+}*/
 
 // Fetch all tenants from the database
 $tenants = [];
@@ -676,7 +677,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                     <i class="fas fa-file-invoice-dollar"></i>
                     <span>Billing</span>
                 </a>
-                <a href="tenants.php" class="nav-item active">
+                <a href="tenants.html" class="nav-item active">
                     <i class="fas fa-users"></i>
                     <span>Tenants</span>
                 </a>
