@@ -72,6 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tenant Management - Homesync</title>
+    <link rel="shortcut icon" href="icons/home.png" type="image/x-icon">
+
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -673,11 +675,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             </div>
             
             <div class="nav-items">
-                <a href="billing.php" class="nav-item">
+                <a href="index.php" class="nav-item">
                     <i class="fas fa-file-invoice-dollar"></i>
                     <span>Billing</span>
                 </a>
-                <a href="tenants.html" class="nav-item active">
+                <a href="tenants.php" class="nav-item active">
                     <i class="fas fa-users"></i>
                     <span>Tenants</span>
                 </a>
