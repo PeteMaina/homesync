@@ -3,10 +3,10 @@ session_start();
 require_once 'db_config.php';
 
 // Check if user is logged in
-if (!isset($_SESSION['admin_id'])) {
+/*if (!isset($_SESSION['admin_id'])) {
     header("Location: login.php");
     exit();
-}
+}*/
 
 // Fetch all visitors from the database
 $visitors = [];
