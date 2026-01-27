@@ -57,7 +57,7 @@ function handleSignup() {
     
     // Check if email already exists
     try {
-        $stmt = $pdo->prepare("SELECT id FROM landlord WHERE email = ?");
+        $stmt = $pdo->prepare("SELECT id FROM landlords WHERE email = ?");
         $stmt->execute([$email]);
         if ($stmt->fetch()) {
             http_response_code(400);
@@ -76,7 +76,7 @@ function handleSignup() {
     
     // Insert admin
     try {
-        $stmt = $pdo->prepare("INSERT INTO landlord (username, email, password) VALUES (?, ?, ?)");
+        $stmt = $pdo->prepare("INSERT INTO landlords (username, email, password) VALUES (?, ?, ?)");
         $stmt->execute([$name, $email, $hashed_password]);
         
         $_SESSION['admin_id'] = $pdo->lastInsertId();
@@ -105,7 +105,7 @@ function handleLogin() {
     }
     
     try {
-        $stmt = $pdo->prepare("SELECT id, username, email, password FROM landlord WHERE email = ?");
+        $stmt = $pdo->prepare("SELECT id, username, email, password FROM landlords WHERE email = ?");
         $stmt->execute([$email]);
         $admin = $stmt->fetch(PDO::FETCH_ASSOC);
         
