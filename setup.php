@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS properties (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                admin_id INT NOT NULL,
+                landlord_id INT NOT NULL,
                 name VARCHAR(100) NOT NULL,
                 floors INT NOT NULL,
                 rooms_per_floor INT NOT NULL,
@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 water_rate DECIMAL(10, 2) NOT NULL,
                 wifi_fee DECIMAL(10, 2) DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (admin_id) REFERENCES admins(id)
+                FOREIGN KEY (landlord_id) REFERENCES landlords(id) ON DELETE CASCADE
             )
         ");
         
@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Insert property record
             $stmt = $pdo->prepare("
-                INSERT INTO properties (admin_id, name, floors, rooms_per_floor, rent_amount, garbage_fee, water_rate, wifi_fee)
+                INSERT INTO properties (landlord_id, name, floors, rooms_per_floor, rent_amount, garbage_fee, water_rate, wifi_fee)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([

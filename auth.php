@@ -83,7 +83,7 @@ function handleSignup() {
         $_SESSION['admin_email'] = $email;
         $_SESSION['admin_name'] = $name;
         
-        echo json_encode(['success' => true, 'message' => 'Registration successful']);
+        echo json_encode(['success' => true, 'message' => 'Registration successful', 'redirect' => 'onboarding.html']);
     } catch (PDOException $e) {
         error_log("Database error: " . $e->getMessage());
         http_response_code(500);
@@ -119,7 +119,7 @@ function handleLogin() {
         $_SESSION['admin_email'] = $admin['email'];
         $_SESSION['admin_name'] = $admin['username'];
         
-        echo json_encode(['success' => true, 'message' => 'Login successful']);
+        echo json_encode(['success' => true, 'message' => 'Login successful', 'redirect' => 'index.php']);
     } catch (PDOException $e) {
         error_log("Database error: " . $e->getMessage());
         http_response_code(500);

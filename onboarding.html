@@ -232,6 +232,16 @@
                     <label>Location</label>
                     <input type="text" class="form-control" id="propLoc" placeholder="e.g. Kilimani, Nairobi">
                 </div>
+                <div style="display: flex; gap: 15px;">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Floors</label>
+                        <input type="number" class="form-control" id="propFloors" placeholder="e.g. 5" value="1">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Rooms per Floor</label>
+                        <input type="number" class="form-control" id="propRoomsPerFloor" placeholder="e.g. 4" value="1">
+                    </div>
+                </div>
                 <button type="button" class="btn btn-outline" id="addPropBtn" style="width: 100%;"><i class="fas fa-plus"></i> Add Property</button>
 
                 <div class="property-list" id="propertyList">
@@ -276,25 +286,39 @@
 
             <!-- Step 3: Billing & Late Fees -->
             <div class="form-step" id="step3">
-                <h3>Billing Defaults</h3>
+                <h3>Billing & Rates</h3>
                 <div class="form-group">
                     <label>Default Monthly Rent (KES)</label>
-                    <input type="number" name="default_rent" class="form-control" placeholder="15000">
+                    <input type="number" name="default_rent" class="form-control" placeholder="15000" value="15000">
+                </div>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    <div class="form-group" style="flex: 1; min-width: 150px;">
+                        <label>Water Rate (KES)</label>
+                        <input type="number" name="water_rate" class="form-control" placeholder="100" value="0">
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 150px;">
+                        <label>Garbage Fee (KES)</label>
+                        <input type="number" name="garbage_fee" class="form-control" placeholder="200" value="0">
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 150px;">
+                        <label>Wifi Fee (KES)</label>
+                        <input type="number" name="wifi_fee" class="form-control" placeholder="500" value="0">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Enable Late Penalties?</label>
-                    <select name="late_fees" class="form-control">
+                    <select name="late_fees" class="form-control" id="lateFeesToggle">
                         <option value="0">No</option>
                         <option value="1">Yes</option>
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="penaltyGroup" style="display: none;">
                     <label>Penalty Amount (KES)</label>
-                    <input type="number" name="penalty_amount" class="form-control" placeholder="500">
+                    <input type="number" name="penalty_amount" class="form-control" placeholder="500" value="500">
                 </div>
                 <div class="form-group">
                     <label>Celcom Africa SMS Sender ID</label>
-                    <input type="text" name="celcom_id" class="form-control" placeholder="HOMESYNC">
+                    <input type="text" name="celcom_id" class="form-control" placeholder="HOMESYNC" value="HOMESYNC">
                 </div>
             </div>
 
@@ -319,9 +343,11 @@
         document.getElementById('addPropBtn').addEventListener('click', () => {
             const name = document.getElementById('propName').value;
             const loc = document.getElementById('propLoc').value;
+            const floors = document.getElementById('propFloors').value;
+            const rooms = document.getElementById('propRoomsPerFloor').value;
             
             if (name && loc) {
-                properties.push({ name, location: loc, units: [] });
+                properties.push({ name, location: loc, floors, rooms, units: [] });
                 document.getElementById('propName').value = '';
                 document.getElementById('propLoc').value = '';
                 renderProperties();
@@ -350,6 +376,10 @@
         document.getElementById('unitMode').addEventListener('change', (e) => {
             document.getElementById('rangeMode').style.display = e.target.value === 'range' ? 'block' : 'none';
             document.getElementById('customMode').style.display = e.target.value === 'custom' ? 'block' : 'none';
+        });
+
+        document.getElementById('lateFeesToggle').addEventListener('change', (e) => {
+            document.getElementById('penaltyGroup').style.display = e.target.value === '1' ? 'block' : 'none';
         });
 
         nextBtn.addEventListener('click', () => {

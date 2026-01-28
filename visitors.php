@@ -3,10 +3,10 @@ session_start();
 require_once 'db_config.php';
 
 // Check if user is logged in
-/*if (!isset($_SESSION['admin_id'])) {
-    header("Location: login.php");
+if (!isset($_SESSION['admin_id'])) {
+    header("Location: auth.html");
     exit();
-}*/
+}
 
 // Fetch all visitors from the database
 $visitors = [];
@@ -96,94 +96,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
         .app-container {
             display: flex;
             min-height: 100vh;
-        }
-        
-        /* Sidebar Styles */
-        .sidebar {
-            width: 280px;
-            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
-            color: white;
-            padding: 24px 0;
-            display: flex;
-            flex-direction: column;
-            box-shadow: var(--card-shadow);
-            z-index: 100;
-        }
-        
-        .sidebar-header {
-            padding: 0 24px 24px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            margin-bottom: 24px;
-        }
-        
-        .sidebar-header h1 {
-            font-size: 24px;
-            font-weight: 700;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        
-        .sidebar-header p {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 14px;
-        }
-        
-        .nav-item {
-            display: flex;
-            align-items: center;
-            padding: 14px 24px;
-            color: rgba(255, 255, 255, 0.8);
-            text-decoration: none;
-            transition: var(--transition);
-            border-left: 4px solid transparent;
-        }
-        
-        .nav-item:hover, .nav-item.active {
-            background: rgba(255, 255, 255, 0.05);
-            color: white;
-            border-left-color: var(--primary);
-        }
-        
-        .nav-item i {
-            margin-right: 12px;
-            font-size: 18px;
-            width: 24px;
-            text-align: center;
-        }
-        
-        .sidebar-footer {
-            margin-top: auto;
-            padding: 24px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .user-profile {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: var(--primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-        }
-        
-        .user-info h4 {
-            font-size: 14px;
-            font-weight: 600;
-        }
-        
-        .user-info p {
-            font-size: 12px;
-            color: rgba(255, 255, 255, 0.7);
         }
         
         /* Main Content Styles */
@@ -625,45 +537,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
 <body>
     <div class="app-container">
         <!-- Sidebar -->
-        <div class="sidebar">
-            <div class="sidebar-header">
-                <h1><i class="fas fa-home"></i> HomeSync</h1>
-                <p>Property Management System</p>
-            </div>
-            
-            <div class="nav-items">
-                <a href="index.php" class="nav-item">
-                    <i class="fas fa-file-invoice-dollar"></i>
-                    <span>Billing</span>
-                </a>
-                <a href="tenants.php" class="nav-item">
-                    <i class="fas fa-users"></i>
-                    <span>Tenants</span>
-                </a>
-                <a href="concerns.php" class="nav-item">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <span>Concerns</span>
-                </a>
-                <a href="visitors.php" class="nav-item active">
-                    <i class="fas fa-user-friends"></i>
-                    <span>Visitors</span>
-                </a>
-                <a href="settings.php" class="nav-item">
-                    <i class="fas fa-cog"></i>
-                    <span>Settings</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-footer">
-                <div class="user-profile">
-                    <div class="user-avatar"><?php echo substr($_SESSION['admin_name'] ?? 'A', 0, 1); ?></div>
-                    <div class="user-info">
-                        <h4><?php echo $_SESSION['admin_name'] ?? 'Admin'; ?></h4>
-                        <p>Landlord</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <?php include 'sidebar.php'; ?>
         
         <!-- Main Content -->
         <div class="main-content">

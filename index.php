@@ -140,14 +140,6 @@ $units_bills = $stmt->fetchAll();
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         body { background: #f1f5f9; color: var(--dark); display: flex; min-height: 100vh; }
 
-        /* Sidebar */
-        .sidebar { width: 280px; background: #1e293b; color: white; display: flex; flex-direction: column; padding: 25px 0; }
-        .sidebar-header { padding: 0 25px 30px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .nav-items { margin-top: 30px; }
-        .nav-item { display: flex; align-items: center; padding: 15px 25px; color: #94a3b8; text-decoration: none; border-left: 4px solid transparent; transition: var(--transition); }
-        .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.05); color: white; border-left-color: var(--primary); }
-        .nav-item i { margin-right: 15px; font-size: 18px; width: 25px; text-align: center; }
-
         /* Main Content */
         .main { flex: 1; padding: 30px; overflow-y: auto; }
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
@@ -189,17 +181,7 @@ $units_bills = $stmt->fetchAll();
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h2><i class="fas fa-sync-alt"></i> HomeSync</h2>
-        </div>
-        <div class="nav-items">
-            <a href="index.php" class="nav-item active"><i class="fas fa-desktop"></i> Dashboard</a>
-            <a href="onboarding.html" class="nav-item"><i class="fas fa-plus-circle"></i> Add Property</a>
-            <a href="contractors.php" class="nav-item"><i class="fas fa-tools"></i> Contractors</a>
-            <a href="gate_links.php" class="nav-item"><i class="fas fa-shield-alt"></i> Security Links</a>
-        </div>
-    </div>
+    <?php include 'sidebar.php'; ?>
 
     <div class="main">
         <div class="top-bar">
@@ -238,16 +220,27 @@ $units_bills = $stmt->fetchAll();
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(46, 196, 182, 0.1); color: var(--success);"><i class="fas fa-user-check"></i></div>
                 <div class="stat-info">
-                    <h3>Occupied</h3>
+                    <h3>Occupied Units</h3>
                     <p><?php echo $stats['total_tenants'] ?? 0; ?></p>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon" style="background: rgba(231, 29, 54, 0.1); color: var(--danger);"><i class="fas fa-clock"></i></div>
                 <div class="stat-info">
-                    <h3>Outstanding</h3>
+                    <h3>Outstanding Dues</h3>
                     <p>KES <?php echo number_format($stats['total_pending'] ?? 0); ?></p>
                 </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div style="margin-bottom: 30px;">
+            <h2 style="font-size: 18px; margin-bottom: 20px;">Quick Actions</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <a href="tenants.php" class="btn prop-pill active" style="justify-content: center;"><i class="fas fa-user-plus"></i> Add New Tenant</a>
+                <a href="notifications.php" class="btn prop-pill" style="background: white; border: 1px solid #ddd; justify-content: center;"><i class="fas fa-bullhorn"></i> Send Bulk Notice</a>
+                <a href="settings.php" class="btn prop-pill" style="background: white; border: 1px solid #ddd; justify-content: center;"><i class="fas fa-tint"></i> Update Rates</a>
+                <button class="btn prop-pill" style="background: white; border: 1px solid #ddd; justify-content: center;" onclick="location.href='generate_bills.php?property_id=<?php echo $current_property_id; ?>'"><i class="fas fa-sync"></i> Generate Bills</button>
             </div>
         </div>
 

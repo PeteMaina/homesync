@@ -4,27 +4,46 @@ session_start();
 require_once 'db_config.php';
 
 // Check if user is logged in
-/*if (!isset($_SESSION['admin_id'])) {
-    header("Location: login.php");
+if (!isset($_SESSION['admin_id'])) {
+    header("Location: auth.html");
     exit();
-}*/
+}
 
-// Fetch all tenants from the database
+// Fetch all tenants with their property and unit details
 $tenants = [];
 try {
-    $stmt = $pdo->query("SELECT * FROM tenants ORDER BY created_at DESC");
+    $stmt = $pdo->prepare("
+        SELECT t.*, p.name as property_name, u.unit_number 
+        FROM tenants t 
+        JOIN properties p ON t.property_id = p.id 
+        JOIN units u ON t.unit_id = u.id 
+        WHERE p.landlord_id = ? 
+        ORDER BY t.created_at DESC
+    ");
+    $stmt->execute([$_SESSION['admin_id']]);
     $tenants = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $error = "Error fetching tenants: " . $e->getMessage();
 }
 
+// Fetch properties and units for the modal
+$stmt = $pdo->prepare("SELECT id, name FROM properties WHERE landlord_id = ?");
+$stmt->execute([$_SESSION['admin_id']]);
+$available_properties = $stmt->fetchAll();
+
+// For simplicity, we'll fetch all units. In a real app, this would be updated via JS based on selected property.
+$stmt = $pdo->prepare("SELECT u.id, u.unit_number, u.property_id FROM units u JOIN properties p ON u.property_id = p.id WHERE p.landlord_id = ?");
+$stmt->execute([$_SESSION['admin_id']]);
+$available_units = $stmt->fetchAll();
+
 // Handle form submission for adding new tenant
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
+    $name = $_POST['name'];
     $id_number = $_POST['id_number'];
-    $house_number = $_POST['house_number'];
+    $property_id = $_POST['property_id'];
+    $unit_id = $_POST['unit_id'];
     $phone_number = $_POST['phone_number'];
-    $rented_month = $_POST['rented_month'];
-    $rented_year = $_POST['rented_year'];
+    $move_in_date = $_POST['move_in_date'];
     
     // Handle file upload (ID picture)
     $id_picture = null;
@@ -51,13 +70,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
             
             // Insert new tenant
-            $stmt = $pdo->prepare("INSERT INTO tenants (id_number, house_number, phone_number, rented_month, rented_year, id_picture) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$id_number, $house_number, $phone_number, $rented_month, $rented_year, $id_picture]);
+            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture]);
             
             $success = "Tenant added successfully!";
             
             // Refresh the tenants list
-            $stmt = $pdo->query("SELECT * FROM tenants ORDER BY created_at DESC");
+            $stmt = $pdo->prepare("
+                SELECT t.*, p.name as property_name, u.unit_number 
+                FROM tenants t 
+                JOIN properties p ON t.property_id = p.id 
+                JOIN units u ON t.unit_id = u.id 
+                WHERE p.landlord_id = ? 
+                ORDER BY t.created_at DESC
+            ");
+            $stmt->execute([$_SESSION['admin_id']]);
             $tenants = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
     } catch (PDOException $e) {
@@ -109,94 +136,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         .app-container {
             display: flex;
             min-height: 100vh;
-        }
-        
-        /* Sidebar Styles */
-        .sidebar {
-            width: 280px;
-            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
-            color: white;
-            padding: 24px 0;
-            display: flex;
-            flex-direction: column;
-            box-shadow: var(--card-shadow);
-            z-index: 100;
-        }
-        
-        .sidebar-header {
-            padding: 0 24px 24px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            margin-bottom: 24px;
-        }
-        
-        .sidebar-header h1 {
-            font-size: 24px;
-            font-weight: 700;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        
-        .sidebar-header p {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 14px;
-        }
-        
-        .nav-item {
-            display: flex;
-            align-items: center;
-            padding: 14px 24px;
-            color: rgba(255, 255, 255, 0.8);
-            text-decoration: none;
-            transition: var(--transition);
-            border-left: 4px solid transparent;
-        }
-        
-        .nav-item:hover, .nav-item.active {
-            background: rgba(255, 255, 255, 0.05);
-            color: white;
-            border-left-color: var(--primary);
-        }
-        
-        .nav-item i {
-            margin-right: 12px;
-            font-size: 18px;
-            width: 24px;
-            text-align: center;
-        }
-        
-        .sidebar-footer {
-            margin-top: auto;
-            padding: 24px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .user-profile {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: var(--primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-        }
-        
-        .user-info h4 {
-            font-size: 14px;
-            font-weight: 600;
-        }
-        
-        .user-info p {
-            font-size: 12px;
-            color: rgba(255, 255, 255, 0.7);
         }
         
         /* Main Content Styles */
@@ -668,45 +607,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
 <body>
     <div class="app-container">
         <!-- Sidebar -->
-        <div class="sidebar">
-            <div class="sidebar-header">
-                <h1><i class="fas fa-home"></i> HomeSync</h1>
-                <p>Property Management System</p>
-            </div>
-            
-            <div class="nav-items">
-                <a href="index.php" class="nav-item">
-                    <i class="fas fa-file-invoice-dollar"></i>
-                    <span>Billing</span>
-                </a>
-                <a href="tenants.php" class="nav-item active">
-                    <i class="fas fa-users"></i>
-                    <span>Tenants</span>
-                </a>
-                <a href="concerns.php" class="nav-item">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <span>Concerns</span>
-                </a>
-                <a href="visitors.php" class="nav-item">
-                    <i class="fas fa-user-friends"></i>
-                    <span>Visitors</span>
-                </a>
-                <a href="settings.php" class="nav-item">
-                    <i class="fas fa-cog"></i>
-                    <span>Settings</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-footer">
-                <div class="user-profile">
-                    <div class="user-avatar"><?php echo substr($_SESSION['admin_name'] ?? 'A', 0, 1); ?></div>
-                    <div class="user-info">
-                        <h4><?php echo $_SESSION['admin_name'] ?? 'Admin'; ?></h4>
-                        <p>Landlord</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <?php include 'sidebar.php'; ?>
         
         <!-- Main Content -->
         <div class="main-content">
@@ -815,11 +716,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                                                 </div>
                                             <?php endif; ?>
                                         </td>
-                                        <td>Tenant <?php echo $tenant['id']; ?></td>
+                                        <td><strong><?php echo htmlspecialchars($tenant['name']); ?></strong></td>
                                         <td><?php echo htmlspecialchars($tenant['id_number']); ?></td>
-                                        <td><?php echo htmlspecialchars($tenant['house_number']); ?></td>
+                                        <td>
+                                            <strong><?php echo htmlspecialchars($tenant['unit_number']); ?></strong><br>
+                                            <small><?php echo htmlspecialchars($tenant['property_name']); ?></small>
+                                        </td>
                                         <td><?php echo htmlspecialchars($tenant['phone_number']); ?></td>
-                                        <td><?php echo htmlspecialchars($tenant['rented_month'] . ' ' . $tenant['rented_year']); ?></td>
+                                        <td><?php echo date('M j, Y', strtotime($tenant['move_in_date'])); ?></td>
                                         <td><span class="status-badge status-occupied">Occupied</span></td>
                                         <td>
                                             <button class="action-btn btn-view"><i class="fas fa-eye"></i></button>
@@ -854,42 +758,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             <form method="POST" enctype="multipart/form-data">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label class="form-label">ID Number</label>
-                        <input type="text" class="form-control" name="id_number" required>
+                        <label class="form-label">Full Name</label>
+                        <input type="text" class="form-control" name="name" required placeholder="e.g. John Doe">
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">House Number</label>
-                        <input type="text" class="form-control" name="house_number" required>
+                        <label class="form-label">ID Number</label>
+                        <input type="text" class="form-control" name="id_number" required placeholder="e.g. 12345678">
+                    </div>
+                    
+                    <div style="display: flex; gap: 15px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Property</label>
+                            <select class="form-control" name="property_id" id="propertySelect" required>
+                                <option value="">Select Property</option>
+                                <?php foreach ($available_properties as $p): ?>
+                                    <option value="<?php echo $p['id']; ?>"><?php echo htmlspecialchars($p['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Unit / House</label>
+                            <select class="form-control" name="unit_id" id="unitSelect" required>
+                                <option value="">Select Unit</option>
+                                <?php foreach ($available_units as $u): ?>
+                                    <option value="<?php echo $u['id']; ?>" data-property="<?php echo $u['property_id']; ?>">
+                                        <?php echo htmlspecialchars($u['unit_number']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                     </div>
                     
                     <div class="form-group">
                         <label class="form-label">Phone Number</label>
-                        <input type="tel" class="form-control" name="phone_number" required>
+                        <input type="tel" class="form-control" name="phone_number" required placeholder="e.g. 0712345678">
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">Move-in Month</label>
-                        <select class="form-control" name="rented_month" required>
-                            <option value="">Select Month</option>
-                            <option value="January">January</option>
-                            <option value="February">February</option>
-                            <option value="March">March</option>
-                            <option value="April">April</option>
-                            <option value="May">May</option>
-                            <option value="June">June</option>
-                            <option value="July">July</option>
-                            <option value="August">August</option>
-                            <option value="September">September</option>
-                            <option value="October">October</option>
-                            <option value="November">November</option>
-                            <option value="December">December</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Move-in Year</label>
-                        <input type="number" class="form-control" name="rented_year" min="2000" max="2030" value="<?php echo date('Y'); ?>" required>
+                        <label class="form-label">Move-in Date</label>
+                        <input type="date" class="form-control" name="move_in_date" value="<?php echo date('Y-m-d'); ?>" required>
                     </div>
                     
                     <div class="form-group">
@@ -922,6 +831,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         
         cancelTenant.addEventListener('click', () => {
             tenantModal.style.display = 'none';
+        });
+
+        // Dynamic unit filtering
+        const propertySelect = document.getElementById('propertySelect');
+        const unitSelect = document.getElementById('unitSelect');
+        const unitOptions = Array.from(unitSelect.options).slice(1); // Exclude first "Select Unit"
+
+        propertySelect.addEventListener('change', function() {
+            const propertyId = this.value;
+            unitSelect.innerHTML = '<option value="">Select Unit</option>';
+            
+            unitOptions.forEach(opt => {
+                if (opt.dataset.property === propertyId) {
+                    unitSelect.appendChild(opt);
+                }
+            });
         });
         
         // Close modal when clicking outside

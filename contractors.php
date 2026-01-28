@@ -34,8 +34,28 @@ $contractors = $stmt->fetchAll();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background: #f1f5f9; padding: 30px; }
-        .card { background: white; border-radius: 15px; padding: 25px; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); max-width: 800px; margin: 0 auto; }
+        :root {
+            --primary: #4361ee;
+            --success: #2ec4b6;
+            --warning: #ff9f1c;
+            --danger: #e71d36;
+            --light: #f8f9fa;
+            --dark: #0f172a;
+            --gray: #64748b;
+            --shadow: 0 10px 30px rgba(0,0,0,0.08);
+            --transition: all 0.3s ease;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background: #f1f5f9; color: var(--dark); display: flex; min-height: 100vh; }
+
+        .app-container { display: flex; width: 100%; }
+        .main { flex: 1; padding: 30px; overflow-y: auto; }
+        
+        .page-header { margin-bottom: 30px; }
+        .page-header h1 { font-size: 28px; font-weight: 700; color: var(--dark); }
+
+        .card { background: white; border-radius: 15px; padding: 25px; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); width: 100%; }
         .btn { padding: 10px 20px; background: #4361ee; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
         .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
@@ -43,11 +63,12 @@ $contractors = $stmt->fetchAll();
     </style>
 </head>
 <body>
-    <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h1><i class="fas fa-tools"></i> Contractor Directory</h1>
-            <a href="index.php" style="text-decoration: none; color: #64748b;"><i class="fas fa-arrow-left"></i> Back</a>
-        </div>
+    <div class="app-container">
+        <?php include 'sidebar.php'; ?>
+        <div class="main">
+            <div class="page-header">
+                <h1>Contractor Directory</h1>
+            </div>
 
         <form method="POST" style="background: #f8fafc; padding: 20px; border-radius: 10px; margin-bottom: 30px; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 15px; align-items: end;">
             <div>
@@ -97,6 +118,8 @@ $contractors = $stmt->fetchAll();
                 <?php endif; ?>
             </tbody>
         </table>
+    </div>
+    </div>
     </div>
 </body>
 </html>
