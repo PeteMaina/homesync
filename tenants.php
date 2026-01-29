@@ -44,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
     $unit_id = $_POST['unit_id'];
     $phone_number = $_POST['phone_number'];
     $move_in_date = $_POST['move_in_date'];
+    $has_wifi = isset($_POST['has_wifi']) ? 1 : 0;
+    $has_garbage = isset($_POST['has_garbage']) ? 1 : 0;
     
     // Handle file upload (ID picture)
     $id_picture = null;
@@ -70,8 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
             
             // Insert new tenant
-            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture) VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture]);
+            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture, has_wifi, has_garbage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture, $has_wifi, $has_garbage]);
             
             $success = "Tenant added successfully!";
             
@@ -698,6 +700,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                                 <th>ID Number</th>
                                 <th>House Number</th>
                                 <th>Phone Number</th>
+                                <th>Services</th>
                                 <th>Move-in Date</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -723,6 +726,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                                             <small><?php echo htmlspecialchars($tenant['property_name']); ?></small>
                                         </td>
                                         <td><?php echo htmlspecialchars($tenant['phone_number']); ?></td>
+                                        <td>
+                                            <div style="display: flex; gap: 8px;">
+                                                <i class="fas fa-wifi" style="color: <?php echo $tenant['has_wifi'] ? 'var(--primary)' : '#ccc'; ?>;" title="WiFi"></i>
+                                                <i class="fas fa-trash" style="color: <?php echo $tenant['has_garbage'] ? 'var(--primary)' : '#ccc'; ?>;" title="Garbage"></i>
+                                            </div>
+                                        </td>
                                         <td><?php echo date('M j, Y', strtotime($tenant['move_in_date'])); ?></td>
                                         <td><span class="status-badge status-occupied">Occupied</span></td>
                                         <td>
@@ -794,6 +803,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                     <div class="form-group">
                         <label class="form-label">Phone Number</label>
                         <input type="tel" class="form-control" name="phone_number" required placeholder="e.g. 0712345678">
+                    </div>
+
+                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+                            <input type="checkbox" name="has_wifi" checked style="width: 18px; height: 18px;"> Enable WiFi billing
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+                            <input type="checkbox" name="has_garbage" checked style="width: 18px; height: 18px;"> Enable Garbage billing
+                        </label>
                     </div>
                     
                     <div class="form-group">

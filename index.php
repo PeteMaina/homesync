@@ -32,32 +32,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_payment'])) {
         $bill = $stmt->fetch();
         
         if ($bill) {
-            $new_balance = $bill['balance'] - $payment_amount;
+            $total_paid_now = $payment_amount;
+            
+            // 2. Fetch Tenant Credit
+            $tStmt = $pdo->prepare("SELECT balance_credit, name, phone_number FROM tenants WHERE id = ?");
+            $tStmt->execute([$bill['tenant_id']]);
+            $tenant = $tStmt->fetch();
+            
+            if ($tenant['balance_credit'] > 0) {
+                $total_paid_now += $tenant['balance_credit'];
+                // Reset tenant credit as it's being used
+                $pdo->prepare("UPDATE tenants SET balance_credit = 0 WHERE id = ?")->execute([$bill['tenant_id']]);
+            }
+
+            $new_balance = $bill['balance'] - $total_paid_now;
+            
+            // 3. Handle Overpayment
+            if ($new_balance < 0) {
+                $excess = abs($new_balance);
+                $pdo->prepare("UPDATE tenants SET balance_credit = balance_credit + ? WHERE id = ?")->execute([$excess, $bill['tenant_id']]);
+                $new_balance = 0;
+            }
+
             $new_status = $new_balance <= 0 ? 'paid' : 'partial';
             
-            // 2. Update Bill
+            // 4. Update Bill
             $upd = $pdo->prepare("UPDATE bills SET balance = ?, status = ? WHERE id = ?");
-            $upd->execute([max(0, $new_balance), $new_status, $bill_id]);
+            $upd->execute([$new_balance, $new_status, $bill_id]);
             
-            // 3. Record Payment
+            // 5. Record Payment
             $pay = $pdo->prepare("INSERT INTO payments (bill_id, amount, payment_method) VALUES (?, ?, ?)");
             $pay->execute([$bill_id, $payment_amount, $method]);
             
-            // 4. Trigger SMS Confirmation if requested
+            // 6. Trigger SMS Confirmation if requested
             if (isset($_POST['send_sms'])) {
-                $tenantStmt = $pdo->prepare("SELECT name, phone_number FROM tenants WHERE id = ?");
-                $tenantStmt->execute([$bill['tenant_id']]);
-                $t = $tenantStmt->fetch();
-                
                 $propStmt = $pdo->prepare("SELECT p.name FROM properties p JOIN units u ON u.property_id = p.id WHERE u.id = ?");
                 $propStmt->execute([$bill['unit_id']]);
                 $pName = $propStmt->fetchColumn();
                 
-                $sms->sendPaymentConfirmation($t['phone_number'], $t['name'], $payment_amount, max(0, $new_balance), $pName);
+                $sms->sendPaymentConfirmation($tenant['phone_number'], $tenant['name'], $payment_amount, $new_balance, $pName);
             }
             
             $pdo->commit();
-            $message = "Payment recorded successfully!";
+            $message = "Payment recorded successfully!" . ($new_balance == 0 && isset($excess) ? " Excess of KES ".number_format($excess)." added to tenant credit." : "");
             $message_type = "success";
         }
     } catch (Exception $e) {
@@ -208,6 +225,17 @@ $units_bills = $stmt->fetchAll();
                 </a>
             <?php endforeach; ?>
         </div>
+
+        <!-- Monthly Utility Notice -->
+        <?php if (date('j') <= 5): ?>
+        <div style="background: var(--warning); color: white; padding: 15px; border-radius: 12px; margin-bottom: 25px; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+                <strong><i class="fas fa-exclamation-triangle"></i> Utility Reading Phase</strong>
+                <p style="font-size: 14px; opacity: 0.9;">It's the beginning of the month. Please enter water readings before generating major bills.</p>
+            </div>
+            <a href="billing.php?property_id=<?php echo $current_property_id; ?>&tab=readings" class="btn" style="background: white; color: var(--warning);">Enter Readings</a>
+        </div>
+        <?php endif; ?>
 
         <div class="stats-grid">
             <div class="stat-card">

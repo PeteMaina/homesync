@@ -12,10 +12,11 @@ if (!isset($_SESSION['admin_id'])) {
 $visitors = [];
 try {
     $stmt = $pdo->query("
-        SELECT v.*, t.house_number as tenant_house 
+        SELECT v.*, u.unit_number as tenant_house, t.name as tenant_name
         FROM visitors v 
-        LEFT JOIN tenants t ON v.id_number = t.id_number 
-        ORDER BY v.visit_date DESC, v.visit_time DESC
+        LEFT JOIN tenants t ON v.tenant_id = t.id 
+        LEFT JOIN units u ON t.unit_id = u.id
+        ORDER BY v.visit_date DESC, v.time_in DESC
     ");
     $visitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -544,11 +545,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
             <div class="page-header">
                 <h1 class="page-title">Visitor Management</h1>
                 <div class="page-actions">
-                    <button class="btn btn-outline" onclick="window.open('../gate/index.html', '_blank')">
-                        <i class="fas fa-external-link-alt"></i> Gate System
-                    </button>
-                    <button class="btn btn-primary" onclick="window.open('../gate/index.html', '_blank')">
-                        <i class="fas fa-plus"></i> Add Visitor
+                    <button class="btn btn-primary" onclick="window.open('gate_links.php', '_self')">
+                        <i class="fas fa-link"></i> Manage Gate Links
                     </button>
                 </div>
             </div>
@@ -680,7 +678,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                         <td>
                                             <div class="visitor-details">
                                                 <div><strong>Date:</strong> <?php echo date('M j, Y', strtotime($visitor['visit_date'])); ?></div>
-                                                <div><span class="time-in">In:</span> <?php echo date('g:i A', strtotime($visitor['visit_time'])); ?></div>
+                                                <div><span class="time-in">In:</span> <?php echo date('g:i A', strtotime($visitor['time_in'])); ?></div>
                                                 <div>
                                                     <?php if (!empty($visitor['time_out'])): ?>
                                                         <span class="time-out">Out:</span> <?php echo date('g:i A', strtotime($visitor['time_out'])); ?>
@@ -692,17 +690,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                         </td>
                                         <td>
                                             <div class="visitor-details">
-                                                <div><strong>House:</strong> <?php echo htmlspecialchars($visitor['house_number']); ?></div>
-                                                <div><strong>Tenant ID:</strong> <?php echo htmlspecialchars($visitor['id_number']); ?></div>
-                                                <?php if (!empty($visitor['tenant_house'])): ?>
-                                                    <div><strong>Tenant House:</strong> <?php echo htmlspecialchars($visitor['tenant_house']); ?></div>
-                                                <?php endif; ?>
+                                                <div><strong>House:</strong> <?php echo htmlspecialchars($visitor['tenant_house'] ?? 'N/A'); ?></div>
+                                                <div><strong>Tenant:</strong> <?php echo htmlspecialchars($visitor['tenant_name'] ?? 'N/A'); ?></div>
                                             </div>
                                         </td>
                                         <td>
                                             <div class="visitor-details">
-                                                <?php if (!empty($visitor['numberplate'])): ?>
-                                                    <div><strong>Plate:</strong> <?php echo htmlspecialchars($visitor['numberplate']); ?></div>
+                                                <?php if (!empty($visitor['number_plate'])): ?>
+                                                    <div><strong>Plate:</strong> <?php echo htmlspecialchars($visitor['number_plate']); ?></div>
                                                 <?php else: ?>
                                                     <div>No vehicle</div>
                                                 <?php endif; ?>

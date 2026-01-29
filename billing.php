@@ -9,6 +9,108 @@ if (!isset($_SESSION['admin_id'])) {
 }
 
 $landlord_id = $_SESSION['admin_id'];
+require_once 'SmsService.php';
+$sms = new SmsService();
+
+$message = $_SESSION['message'] ?? '';
+$message_type = $_SESSION['message_type'] ?? '';
+unset($_SESSION['message'], $_SESSION['message_type']);
+
+// Handle Water Readings Submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_readings'])) {
+    $readings = $_POST['readings']; // Array of unit_id => current_reading
+    $month = date('F');
+    $year = date('Y');
+    
+    try {
+        $pdo->beginTransaction();
+        foreach ($readings as $unit_id => $curr) {
+            if ($curr === '') continue;
+            
+            // Get previous reading (last month's current)
+            $prevStmt = $pdo->prepare("SELECT reading_curr FROM bills WHERE unit_id = ? AND bill_type = 'water' ORDER BY id DESC LIMIT 1");
+            $prevStmt->execute([$unit_id]);
+            $prev = $prevStmt->fetchColumn() ?: 0;
+            
+            // Check if water bill for this month exists
+            $check = $pdo->prepare("SELECT id FROM bills WHERE unit_id = ? AND bill_type = 'water' AND month = ? AND year = ?");
+            $check->execute([$unit_id, $month, $year]);
+            $bill = $check->fetch();
+            
+            if ($bill) {
+                $upd = $pdo->prepare("UPDATE bills SET reading_curr = ?, reading_prev = ? WHERE id = ?");
+                $upd->execute([$curr, $prev, $bill['id']]);
+            } else {
+                // Get tenant
+                $tStmt = $pdo->prepare("SELECT id FROM tenants WHERE unit_id = ? AND status = 'active'");
+                $tStmt->execute([$unit_id]);
+                $tid = $tStmt->fetchColumn();
+                
+                $ins = $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, reading_curr, reading_prev, due_date, status) VALUES (?, ?, 'water', 0, 0, ?, ?, ?, ?, ?, 'unpaid')");
+                $ins->execute([$tid, $unit_id, $month, $year, $curr, $prev, date('Y-m-d', strtotime('5th next month')), 'unpaid']);
+            }
+        }
+        $pdo->commit();
+        $_SESSION['message'] = "Readings saved successfully! You can now generate major bills.";
+        $_SESSION['message_type'] = "success";
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        $_SESSION['message'] = "Error saving readings: " . $e->getMessage();
+        $_SESSION['message_type'] = "error";
+    }
+    header("Location: billing.php?property_id=" . $_POST['property_id'] . "&tab=readings");
+    exit();
+}
+
+// Handle SMS Invoice Send
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_invoice'])) {
+    $tenant_id = $_POST['tenant_id'];
+    $month = date('F');
+    $year = date('Y');
+    
+    // Fetch all unpaid/partial bills for this tenant for specific month
+    $stmt = $pdo->prepare("
+        SELECT b.*, t.name, t.phone_number, p.name as prop_name, u.unit_number
+        FROM bills b 
+        JOIN tenants t ON b.tenant_id = t.id 
+        JOIN units u ON b.unit_id = u.id
+        JOIN properties p ON u.property_id = p.id
+        WHERE b.tenant_id = ? AND b.month = ? AND b.year = ?
+    ");
+    $stmt->execute([$tenant_id, $month, $year]);
+    $tenant_bills = $stmt->fetchAll();
+    
+    if ($tenant_bills) {
+        $data = [
+            'property' => $tenant_bills[0]['prop_name'],
+            'month' => "$month $year",
+            'rent' => 0, 'water_units' => 0, 'water_cost' => 0, 'wifi' => 0, 'garbage' => 0, 'credit' => 0, 'total' => 0
+        ];
+        
+        foreach ($tenant_bills as $tb) {
+            if ($tb['bill_type'] == 'rent') $data['rent'] = $tb['amount'];
+            if ($tb['bill_type'] == 'water') {
+                $data['water_units'] = $tb['reading_curr'] - $tb['reading_prev'];
+                $data['water_cost'] = $tb['amount'];
+            }
+            if ($tb['bill_type'] == 'wifi') $data['wifi'] = $tb['amount'];
+            if ($tb['bill_type'] == 'garbage') $data['garbage'] = $tb['amount'];
+            $data['total'] += $tb['balance'];
+        }
+        
+        // Fetch remaining credit
+        $cStmt = $pdo->prepare("SELECT balance_credit FROM tenants WHERE id = ?");
+        $cStmt->execute([$tenant_id]);
+        $data['credit'] = $cStmt->fetchColumn();
+        
+        if ($sms->sendMonthlyBreakdown($tenant_bills[0]['phone_number'], $tenant_bills[0]['name'], $data)) {
+            $_SESSION['message'] = "Invoice sent to " . $tenant_bills[0]['name'];
+            $_SESSION['message_type'] = "success";
+        }
+    }
+    header("Location: billing.php?property_id=" . $_POST['property_id']);
+    exit();
+}
 
 // Fetch Properties for filtering
 $stmt = $pdo->prepare("SELECT * FROM properties WHERE landlord_id = ?");
@@ -114,8 +216,18 @@ if ($current_property_id) {
         <div class="main">
             <div class="page-header">
                 <h1>Detailed Billing</h1>
-                <button class="btn btn-primary" onclick="openCustomBillModal()"><i class="fas fa-plus"></i> Create Custom Bill</button>
+                <div style="display: flex; gap: 10px;">
+                    <a href="?property_id=<?php echo $current_property_id; ?>&tab=overview" class="btn <?php echo (!isset($_GET['tab']) || $_GET['tab'] == 'overview') ? 'btn-primary' : 'btn-outline'; ?>">Overview</a>
+                    <a href="?property_id=<?php echo $current_property_id; ?>&tab=readings" class="btn <?php echo (isset($_GET['tab']) && $_GET['tab'] == 'readings') ? 'btn-primary' : 'btn-outline'; ?>">Utility Readings</a>
+                    <button class="btn btn-primary" onclick="openCustomBillModal()"><i class="fas fa-plus"></i> Create Custom Bill</button>
+                </div>
             </div>
+
+            <?php if ($message): ?>
+                <div style="padding: 15px; border-radius: 12px; margin-bottom: 25px; background: <?php echo $message_type == 'success' ? '#dcfce7' : '#fee2e2'; ?>; color: <?php echo $message_type == 'success' ? '#166534' : '#991b1b'; ?>;">
+                    <?php echo $message; ?>
+                </div>
+            <?php endif; ?>
 
             <div class="filter-bar">
                 <label>Property:</label>
@@ -140,6 +252,7 @@ if ($current_property_id) {
             }
             ?>
 
+            <?php if (!isset($_GET['tab']) || $_GET['tab'] == 'overview'): ?>
             <div class="billing-card">
                 <div class="math-summary">
                     <div class="math-item">
@@ -191,10 +304,15 @@ if ($current_property_id) {
                                             <?php echo ucfirst($b['status']); ?>
                                         </span>
                                     </td>
-                                    <td>
+                                    <td style="display: flex; gap: 5px;">
                                         <button class="btn btn-primary btn-sm" onclick="openManualAdjustModal(<?php echo $b['id']; ?>, '<?php echo $b['tenant_name']; ?>', <?php echo $b['balance']; ?>)">
                                             <i class="fas fa-edit"></i>
                                         </button>
+                                        <form method="POST" style="margin:0;">
+                                            <input type="hidden" name="tenant_id" value="<?php echo $b['tenant_id']; ?>">
+                                            <input type="hidden" name="property_id" value="<?php echo $current_property_id; ?>">
+                                            <button type="submit" name="send_invoice" class="btn btn-outline btn-sm" title="Send SMS Invoice"><i class="fas fa-paper-plane"></i></button>
+                                        </form>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -206,6 +324,53 @@ if ($current_property_id) {
                     </tbody>
                 </table>
             </div>
+            <?php else: ?>
+            <!-- Readings Tab -->
+            <div class="billing-card">
+                <h3>Enter Water Readings - <?php echo date('F Y'); ?></h3>
+                <p style="font-size: 14px; color: var(--gray); margin-bottom: 25px;">Enter the current meter reading for each unit. The system will calculate usage automatically.</p>
+                
+                <form method="POST">
+                    <input type="hidden" name="property_id" value="<?php echo $current_property_id; ?>">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Unit Number</th>
+                                <th>Tenant</th>
+                                <th>Previous Reading</th>
+                                <th>Current Reading</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php
+                            $uStmt = $pdo->prepare("
+                                SELECT u.id, u.unit_number, t.name as tenant_name, 
+                                (SELECT reading_curr FROM bills WHERE unit_id = u.id AND bill_type = 'water' ORDER BY id DESC LIMIT 1) as last_reading
+                                FROM units u 
+                                LEFT JOIN tenants t ON u.id = t.unit_id AND t.status = 'active'
+                                WHERE u.property_id = ?
+                            ");
+                            $uStmt->execute([$current_property_id]);
+                            $units = $uStmt->fetchAll();
+                            foreach ($units as $u):
+                            ?>
+                            <tr>
+                                <td><strong><?php echo $u['unit_number']; ?></strong></td>
+                                <td><?php echo $u['tenant_name'] ?: '<span style="color:#ccc;">Vacant</span>'; ?></td>
+                                <td><?php echo $u['last_reading'] ?: 0; ?></td>
+                                <td>
+                                    <input type="number" step="0.01" name="readings[<?php echo $u['id']; ?>]" class="form-control" style="width: 150px;" placeholder="Enter new...">
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <div style="margin-top: 25px; text-align: right;">
+                        <button type="submit" name="save_readings" class="btn btn-primary">Save Readings & Calculate Bills</button>
+                    </div>
+                </form>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 

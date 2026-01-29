@@ -60,6 +60,22 @@ class SmsService {
     }
 
     /**
+     * Specialized: Send Monthly Bill Breakdown
+     */
+    public function sendMonthlyBreakdown($phone, $name, $data) {
+        // Data contains: rent, water_units, water_cost, wifi, garbage, credit, total, property
+        $msg = "Hello $name, Bill for {$data['property']} ({$data['month']}):\n";
+        $msg .= "Rent: " . number_format($data['rent']) . "\n";
+        if ($data['water_units'] > 0) $msg .= "Water ({$data['water_units']} units): " . number_format($data['water_cost']) . "\n";
+        if ($data['wifi'] > 0) $msg .= "WiFi: " . number_format($data['wifi']) . "\n";
+        if ($data['garbage'] > 0) $msg .= "Garbage: " . number_format($data['garbage']) . "\n";
+        if ($data['credit'] > 0) $msg .= "Prev Credit: -" . number_format($data['credit']) . "\n";
+        $msg .= "TOTAL DUE: KES " . number_format($data['total']) . ". Pay by 5th. Thank you.";
+        
+        return $this->sendSms($phone, $msg);
+    }
+
+    /**
      * Specialized: Send Payment Confirmation
      */
     public function sendPaymentConfirmation($phone, $name, $amount, $balance, $propertyName) {
