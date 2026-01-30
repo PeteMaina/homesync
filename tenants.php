@@ -1,13 +1,10 @@
 
 <?php
-session_start();
+require_once 'session_check.php';
 require_once 'db_config.php';
 
 // Check if user is logged in
-if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
-    exit();
-}
+requireLogin();
 
 // Fetch all tenants with their property and unit details
 $tenants = [];
@@ -35,6 +32,109 @@ $available_properties = $stmt->fetchAll();
 $stmt = $pdo->prepare("SELECT u.id, u.unit_number, u.property_id FROM units u JOIN properties p ON u.property_id = p.id WHERE p.landlord_id = ?");
 $stmt->execute([$_SESSION['admin_id']]);
 $available_units = $stmt->fetchAll();
+
+// Handle form submission for editing tenant
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_tenant'])) {
+    $tenant_id = $_POST['edit_tenant_id'];
+    $name = $_POST['edit_name'];
+    $id_number = $_POST['edit_id_number'];
+    $phone_number = $_POST['edit_phone_number'];
+    $has_wifi = isset($_POST['edit_has_wifi']) ? 1 : 0;
+    $has_garbage = isset($_POST['edit_has_garbage']) ? 1 : 0;
+    $initial_water_reading = $_POST['edit_initial_water_reading'] ?? 0;
+    $initial_electricity_reading = $_POST['edit_initial_electricity_reading'] ?? 0;
+
+    try {
+        // First verify this tenant belongs to the current landlord
+        $stmt = $pdo->prepare("
+            SELECT t.id FROM tenants t
+            JOIN properties p ON t.property_id = p.id
+            WHERE t.id = ? AND p.landlord_id = ?
+        ");
+        $stmt->execute([$tenant_id, $_SESSION['admin_id']]);
+        if (!$stmt->fetch()) {
+            $error = "Access denied: Tenant not found or doesn't belong to you.";
+        } else {
+            // Check if ID number is already used by another tenant
+            $stmt = $pdo->prepare("SELECT id FROM tenants WHERE id_number = ? AND id != ?");
+            $stmt->execute([$id_number, $tenant_id]);
+            if ($stmt->fetch()) {
+                $error = "A tenant with this ID number already exists.";
+            } else {
+                // Alter table to add initial readings columns if they don't exist
+                $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
+                $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+
+                // Update tenant
+                $stmt = $pdo->prepare("UPDATE tenants SET name = ?, id_number = ?, phone_number = ?, has_wifi = ?, has_garbage = ?, initial_water_reading = ?, initial_electricity_reading = ? WHERE id = ?");
+                $stmt->execute([$name, $id_number, $phone_number, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading, $tenant_id]);
+
+                $success = "Tenant updated successfully!";
+
+                // Refresh the tenants list
+                $stmt = $pdo->prepare("
+                    SELECT t.*, p.name as property_name, u.unit_number
+                    FROM tenants t
+                    JOIN properties p ON t.property_id = p.id
+                    JOIN units u ON t.unit_id = u.id
+                    WHERE p.landlord_id = ?
+                    ORDER BY t.created_at DESC
+                ");
+                $stmt->execute([$_SESSION['admin_id']]);
+                $tenants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
+    } catch (PDOException $e) {
+        $error = "Error updating tenant: " . $e->getMessage();
+    }
+}
+
+// Handle tenant deletion
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_tenant'])) {
+    $tenant_id = $_POST['delete_tenant_id'];
+
+    try {
+        // First verify this tenant belongs to the current landlord
+        $stmt = $pdo->prepare("
+            SELECT t.id FROM tenants t
+            JOIN properties p ON t.property_id = p.id
+            WHERE t.id = ? AND p.landlord_id = ?
+        ");
+        $stmt->execute([$tenant_id, $_SESSION['admin_id']]);
+        if (!$stmt->fetch()) {
+            $error = "Access denied: Tenant not found or doesn't belong to you.";
+        } else {
+            // Check if tenant has any unpaid bills
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM bills WHERE tenant_id = ? AND balance > 0");
+            $stmt->execute([$tenant_id]);
+            $unpaid_bills = $stmt->fetchColumn();
+
+            if ($unpaid_bills > 0) {
+                $error = "Cannot delete tenant with unpaid bills. Please settle all outstanding balances first.";
+            } else {
+                // Delete tenant (cascade will handle related records)
+                $stmt = $pdo->prepare("DELETE FROM tenants WHERE id = ?");
+                $stmt->execute([$tenant_id]);
+
+                $success = "Tenant deleted successfully!";
+
+                // Refresh the tenants list
+                $stmt = $pdo->prepare("
+                    SELECT t.*, p.name as property_name, u.unit_number
+                    FROM tenants t
+                    JOIN properties p ON t.property_id = p.id
+                    JOIN units u ON t.unit_id = u.id
+                    WHERE p.landlord_id = ?
+                    ORDER BY t.created_at DESC
+                ");
+                $stmt->execute([$_SESSION['admin_id']]);
+                $tenants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
+    } catch (PDOException $e) {
+        $error = "Error deleting tenant: " . $e->getMessage();
+    }
+}
 
 // Handle form submission for adding new tenant
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
@@ -68,12 +168,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         if ($stmt->fetch()) {
             $error = "A tenant with this ID number already exists.";
         } else {
-            // Alter table to add id_picture column if it doesn't exist
+            // Alter table to add id_picture and initial readings columns if they don't exist
             $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
-            
+            $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
+            $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+
+            // Get initial readings from form
+            $initial_water_reading = $_POST['initial_water_reading'] ?? 0;
+            $initial_electricity_reading = $_POST['initial_electricity_reading'] ?? 0;
+
             // Insert new tenant
-            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture, has_wifi, has_garbage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture, $has_wifi, $has_garbage]);
+            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture, has_wifi, has_garbage, initial_water_reading, initial_electricity_reading) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading]);
             
             $success = "Tenant added successfully!";
             
@@ -197,6 +303,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         .btn-outline:hover {
             background: var(--primary);
             color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
         }
         
         /* Dashboard Cards */
@@ -735,9 +850,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                                         <td><?php echo date('M j, Y', strtotime($tenant['move_in_date'])); ?></td>
                                         <td><span class="status-badge status-occupied">Occupied</span></td>
                                         <td>
-                                            <button class="action-btn btn-view"><i class="fas fa-eye"></i></button>
-                                            <button class="action-btn btn-edit"><i class="fas fa-edit"></i></button>
-                                            <button class="action-btn btn-delete"><i class="fas fa-trash"></i></button>
+                                            <button class="action-btn btn-edit" onclick="openEditModal(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>', '<?php echo htmlspecialchars($tenant['id_number']); ?>', '<?php echo htmlspecialchars($tenant['phone_number']); ?>', '<?php echo htmlspecialchars($tenant['unit_number']); ?>', '<?php echo htmlspecialchars($tenant['property_name']); ?>', '<?php echo $tenant['has_wifi']; ?>', '<?php echo $tenant['has_garbage']; ?>', '<?php echo $tenant['initial_water_reading']; ?>', '<?php echo $tenant['initial_electricity_reading']; ?>')"><i class="fas fa-edit"></i></button>
+                                            <button class="action-btn btn-delete" onclick="confirmDelete(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>')"><i class="fas fa-trash"></i></button>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -823,6 +937,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                         <label class="form-label">ID Picture (Optional)</label>
                         <input type="file" class="form-control" name="id_picture" accept="image/*">
                     </div>
+
+                    <div style="display: flex; gap: 15px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Initial Water Reading</label>
+                            <input type="number" step="0.01" class="form-control" name="initial_water_reading" placeholder="e.g. 123.45" value="0">
+                        </div>
+
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Initial Electricity Reading</label>
+                            <input type="number" step="0.01" class="form-control" name="initial_electricity_reading" placeholder="e.g. 456.78" value="0">
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline" id="cancelTenant">Cancel</button>
@@ -832,24 +958,178 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         </div>
     </div>
 
+    <!-- Edit Tenant Modal -->
+    <div class="modal-overlay" id="editTenantModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">Edit Tenant</h2>
+                <button class="modal-close" id="closeEditModal">&times;</button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="edit_tenant_id" id="editTenantId">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Full Name</label>
+                        <input type="text" class="form-control" name="edit_name" id="editName" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">ID Number</label>
+                        <input type="text" class="form-control" name="edit_id_number" id="editIdNumber" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Phone Number</label>
+                        <input type="tel" class="form-control" name="edit_phone_number" id="editPhoneNumber" required>
+                    </div>
+
+                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+                            <input type="checkbox" name="edit_has_wifi" id="editHasWifi" style="width: 18px; height: 18px;"> Enable WiFi billing
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+                            <input type="checkbox" name="edit_has_garbage" id="editHasGarbage" style="width: 18px; height: 18px;"> Enable Garbage billing
+                        </label>
+                    </div>
+
+                    <div style="display: flex; gap: 15px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Initial Water Reading</label>
+                            <input type="number" step="0.01" class="form-control" name="edit_initial_water_reading" id="editInitialWaterReading">
+                        </div>
+
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Initial Electricity Reading</label>
+                            <input type="number" step="0.01" class="form-control" name="edit_initial_electricity_reading" id="editInitialElectricityReading">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" id="cancelEditTenant">Cancel</button>
+                    <button type="submit" class="btn btn-primary" name="edit_tenant">Update Tenant</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">Confirm Deletion</h2>
+                <button class="modal-close" id="closeDeleteModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--danger); margin-bottom: 16px;"></i>
+                    <h3 style="color: var(--danger); margin-bottom: 16px;">Are you sure you want to delete this tenant?</h3>
+                </div>
+                <div style="background: var(--light); padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+                    <p style="margin-bottom: 12px;"><strong>Tenant:</strong> <span id="deleteTenantName"></span></p>
+                    <p style="color: var(--danger); font-weight: 600; margin-bottom: 12px;">⚠️ This action cannot be undone!</p>
+                    <p style="font-size: 14px; color: var(--gray);">
+                        Deleting this tenant will permanently remove all associated data including:
+                    </p>
+                    <ul style="font-size: 14px; color: var(--gray); margin-top: 8px;">
+                        <li>Tenant profile and contact information</li>
+                        <li>All billing history and records</li>
+                        <li>Associated visitor logs</li>
+                        <li>Payment records</li>
+                    </ul>
+                </div>
+                <p style="font-size: 14px; color: var(--gray); text-align: center;">
+                    If this tenant has outstanding bills, deletion will be blocked. Please settle all balances first.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" id="cancelDelete">Cancel</button>
+                <button type="submit" class="btn btn-danger" id="confirmDeleteBtn">Yes, Delete Tenant</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Modal functionality
         const addTenantBtn = document.getElementById('addTenantBtn');
         const tenantModal = document.getElementById('tenantModal');
+        const editTenantModal = document.getElementById('editTenantModal');
+        const deleteModal = document.getElementById('deleteModal');
         const closeModal = document.getElementById('closeModal');
+        const closeEditModal = document.getElementById('closeEditModal');
+        const closeDeleteModal = document.getElementById('closeDeleteModal');
         const cancelTenant = document.getElementById('cancelTenant');
-        
+        const cancelEditTenant = document.getElementById('cancelEditTenant');
+        const cancelDelete = document.getElementById('cancelDelete');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+
         addTenantBtn.addEventListener('click', () => {
             tenantModal.style.display = 'flex';
         });
-        
+
         closeModal.addEventListener('click', () => {
             tenantModal.style.display = 'none';
         });
-        
+
         cancelTenant.addEventListener('click', () => {
             tenantModal.style.display = 'none';
         });
+
+        closeEditModal.addEventListener('click', () => {
+            editTenantModal.style.display = 'none';
+        });
+
+        cancelEditTenant.addEventListener('click', () => {
+            editTenantModal.style.display = 'none';
+        });
+
+        closeDeleteModal.addEventListener('click', () => {
+            deleteModal.style.display = 'none';
+        });
+
+        cancelDelete.addEventListener('click', () => {
+            deleteModal.style.display = 'none';
+        });
+
+        // Edit tenant modal functionality
+        function openEditModal(tenantId, name, idNumber, phoneNumber, unitNumber, propertyName, hasWifi, hasGarbage, initialWaterReading, initialElectricityReading) {
+            document.getElementById('editTenantId').value = tenantId;
+            document.getElementById('editName').value = name;
+            document.getElementById('editIdNumber').value = idNumber;
+            document.getElementById('editPhoneNumber').value = phoneNumber;
+            document.getElementById('editHasWifi').checked = hasWifi == '1';
+            document.getElementById('editHasGarbage').checked = hasGarbage == '1';
+            document.getElementById('editInitialWaterReading').value = initialWaterReading || 0;
+            document.getElementById('editInitialElectricityReading').value = initialElectricityReading || 0;
+            editTenantModal.style.display = 'flex';
+        }
+
+        // Delete confirmation modal functionality
+        function confirmDelete(tenantId, tenantName) {
+            document.getElementById('deleteTenantName').textContent = tenantName;
+            deleteModal.style.display = 'flex';
+
+            // Handle delete confirmation
+            confirmDeleteBtn.onclick = function() {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.style.display = 'none';
+
+                const tenantIdInput = document.createElement('input');
+                tenantIdInput.type = 'hidden';
+                tenantIdInput.name = 'delete_tenant_id';
+                tenantIdInput.value = tenantId;
+                form.appendChild(tenantIdInput);
+
+                const submitInput = document.createElement('input');
+                submitInput.type = 'hidden';
+                submitInput.name = 'delete_tenant';
+                submitInput.value = '1';
+                form.appendChild(submitInput);
+
+                document.body.appendChild(form);
+                form.submit();
+            };
+        }
 
         // Dynamic unit filtering
         const propertySelect = document.getElementById('propertySelect');
@@ -859,21 +1139,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         propertySelect.addEventListener('change', function() {
             const propertyId = this.value;
             unitSelect.innerHTML = '<option value="">Select Unit</option>';
-            
+
             unitOptions.forEach(opt => {
                 if (opt.dataset.property === propertyId) {
                     unitSelect.appendChild(opt);
                 }
             });
         });
-        
+
         // Close modal when clicking outside
         tenantModal.addEventListener('click', (e) => {
             if (e.target === tenantModal) {
                 tenantModal.style.display = 'none';
             }
         });
-        
+
+        editTenantModal.addEventListener('click', (e) => {
+            if (e.target === editTenantModal) {
+                editTenantModal.style.display = 'none';
+            }
+        });
+
+        deleteModal.addEventListener('click', (e) => {
+            if (e.target === deleteModal) {
+                deleteModal.style.display = 'none';
+            }
+        });
+
         // Close notifications
         document.querySelectorAll('.notification-close').forEach(button => {
             button.addEventListener('click', (e) => {

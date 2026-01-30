@@ -1,11 +1,8 @@
 <?php
-session_start();
+require_once 'session_check.php';
 require_once 'db_config.php';
 
-if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
-    exit();
-}
+requireLogin();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $landlord_id = $_SESSION['admin_id'];

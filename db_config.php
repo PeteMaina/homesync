@@ -1,11 +1,5 @@
 <?php
-// api/config.php — update these to match your environment
-$DB_HOST = 'localhost';
-$DB_NAME = 'homesync';
-$DB_USER = 'root';
-$DB_PASS = ''; // put your local DB password
-
-
+require_once 'config.php';
 
 $options = [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -13,10 +7,18 @@ $options = [
 ];
 
 try {
-    $pdo = new PDO("mysql:host={$DB_HOST};dbname={$DB_NAME};charset=utf8mb4", $DB_USER, $DB_PASS, $options);
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, $options);
 } catch (Exception $e) {
-    http_response_code(500);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]);
-    exit;
+    if (DEBUG_MODE) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]);
+        exit;
+    } else {
+        // In production, don't expose database errors
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'Internal server error']);
+        exit;
+    }
 }

@@ -69,13 +69,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
         padding: 24px;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
     }
-    
+
     .user-profile {
         display: flex;
         align-items: center;
         gap: 12px;
     }
-    
+
     .user-avatar {
         width: 40px;
         height: 40px;
@@ -86,15 +86,64 @@ $current_page = basename($_SERVER['PHP_SELF']);
         justify-content: center;
         font-weight: 600;
     }
-    
+
     .user-info h4 {
         font-size: 14px;
         font-weight: 600;
     }
-    
+
     .user-info p {
         font-size: 12px;
         color: rgba(255, 255, 255, 0.7);
+    }
+
+    .logout-btn {
+        width: 100%;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        margin-top: 16px;
+    }
+
+    .logout-btn:hover {
+        background: rgba(231, 29, 54, 0.2);
+        border-color: #e71d36;
+        color: #ff6b7d;
+    }
+
+    .footer {
+        padding: 20px 24px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        text-align: center;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.7);
+        line-height: 1.5;
+    }
+
+    .footer p {
+        margin: 0;
+    }
+
+    .footer a {
+        color: rgba(255, 255, 255, 0.8);
+        text-decoration: none;
+    }
+
+    .footer a:hover {
+        color: white;
+    }
+
+    @media (max-width: 768px) {
+        .footer {
+            padding: 15px 20px;
+            font-size: 11px;
+        }
     }
 </style>
 
@@ -139,5 +188,17 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <p>Landlord</p>
             </div>
         </div>
+        <form method="POST" action="logout.php" style="margin-top: 16px;">
+            <button type="submit" class="logout-btn">
+                <i class="fas fa-sign-out-alt" style="margin-right: 8px;"></i>
+                Logout
+            </button>
+        </form>
+    </div>
+
+    <div class="footer">
+        <p>&copy; <?php echo date('Y'); ?> HomeSync. All rights reserved.</p>
+        <p>Powered by <a href="mailto:jacetechnologies@gmail.com">Jacetechnologies@gmail.com</a></p>
+        <p>Contact: <a href="tel:+254725531336">+254 725 531336</a></p>
     </div>
 </div>

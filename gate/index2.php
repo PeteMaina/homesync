@@ -538,19 +538,17 @@
 </head>
 <body>
   <?php
-  // Database connection and processing
-  $servername = "localhost";
-  $username = "root"; // Change if needed
-  $password = ""; // Change if needed
-  $dbname = "homesync";
-  
-  // Create connection
-  $conn = new mysqli($servername, $username, $password, $dbname);
-  
-  // Check connection
-  if ($conn->connect_error) {
-      die("Connection failed: " . $conn->connect_error);
+  // Database connection and processing - using main config
+  require_once '../config.php';
+  require_once '../db_config.php';
+
+  // Check if security personnel is logged in
+  if (!isset($_SESSION['security_id'])) {
+      header("Location: ../auth.html");
+      exit();
   }
+
+  $security_id = $_SESSION['security_id'];
   
   // Handle form submission
   $message = '';

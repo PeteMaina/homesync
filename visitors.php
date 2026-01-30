@@ -1,23 +1,23 @@
 <?php
-session_start();
+require_once 'session_check.php';
 require_once 'db_config.php';
 
 // Check if user is logged in
-if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
-    exit();
-}
+requireLogin();
 
-// Fetch all visitors from the database
+// Fetch visitors only for the current landlord's properties
 $visitors = [];
 try {
-    $stmt = $pdo->query("
+    $stmt = $pdo->prepare("
         SELECT v.*, u.unit_number as tenant_house, t.name as tenant_name
-        FROM visitors v 
-        LEFT JOIN tenants t ON v.tenant_id = t.id 
+        FROM visitors v
+        LEFT JOIN tenants t ON v.tenant_id = t.id
         LEFT JOIN units u ON t.unit_id = u.id
+        LEFT JOIN properties p ON u.property_id = p.id
+        WHERE p.landlord_id = ?
         ORDER BY v.visit_date DESC, v.time_in DESC
     ");
+    $stmt->execute([$_SESSION['admin_id']]);
     $visitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $error = "Error fetching visitors: " . $e->getMessage();
@@ -27,23 +27,29 @@ try {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
     $filter_date = $_POST['filter_date'];
     $filter_house = $_POST['filter_house'];
-    
-    $query = "SELECT v.*, t.house_number as tenant_house FROM visitors v LEFT JOIN tenants t ON v.id_number = t.id_number WHERE 1=1";
-    $params = [];
-    
+
+    $query = "
+        SELECT v.*, u.unit_number as tenant_house, t.name as tenant_name
+        FROM visitors v
+        LEFT JOIN tenants t ON v.tenant_id = t.id
+        LEFT JOIN units u ON t.unit_id = u.id
+        LEFT JOIN properties p ON u.property_id = p.id
+        WHERE p.landlord_id = ?
+    ";
+    $params = [$_SESSION['admin_id']];
+
     if (!empty($filter_date)) {
         $query .= " AND v.visit_date = ?";
         $params[] = $filter_date;
     }
-    
+
     if (!empty($filter_house)) {
-        $query .= " AND (v.house_number = ? OR t.house_number = ?)";
-        $params[] = $filter_house;
+        $query .= " AND u.unit_number = ?";
         $params[] = $filter_house;
     }
-    
-    $query .= " ORDER BY v.visit_date DESC, v.visit_time DESC";
-    
+
+    $query .= " ORDER BY v.visit_date DESC, v.time_in DESC";
+
     try {
         $stmt = $pdo->prepare($query);
         $stmt->execute($params);

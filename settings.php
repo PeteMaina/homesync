@@ -1,12 +1,9 @@
 <?php
-session_start();
+require_once 'session_check.php';
 require_once 'db_config.php';
 
 // Check if user is logged in
-if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
-    exit();
-}
+requireLogin();
 
 // Fetch properties to show in management
 $landlord_id = $_SESSION['admin_id'];

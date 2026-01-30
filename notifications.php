@@ -20,13 +20,13 @@ unset($_SESSION['message'], $_SESSION['message_type']);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_bulk'])) {
     $property_id = $_POST['property_id'];
     $notif_text = $_POST['notif_text'];
-    
+
     try {
         // Fetch all active tenants for this property
         $stmt = $pdo->prepare("SELECT phone_number FROM tenants WHERE property_id = ? AND status = 'active'");
         $stmt->execute([$property_id]);
         $phones = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        
+
         if (count($phones) > 0) {
             $sms->sendBulkNotice($phones, $notif_text);
             $_SESSION['message'] = "Bulk notification sent to " . count($phones) . " tenants!";
@@ -37,6 +37,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_bulk'])) {
         }
     } catch (Exception $e) {
         $_SESSION['message'] = "Error: " . $e->getMessage();
+        $_SESSION['message_type'] = "error";
+    }
+    header("Location: notifications.php");
+    exit();
+}
+
+// Handle Individual SMS
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_individual_sms'])) {
+    $phone = $_POST['send_individual_sms'];
+    $message = $_POST['individual_message'];
+
+    try {
+        // Get property name for shortcode
+        $stmt = $pdo->prepare("
+            SELECT p.name as property_name
+            FROM tenants t
+            JOIN properties p ON t.property_id = p.id
+            WHERE t.phone_number = ? AND p.landlord_id = ?
+        ");
+        $stmt->execute([$phone, $landlord_id]);
+        $property = $stmt->fetch();
+
+        if ($property) {
+            $sms->sendDirectMessage($phone, $message, $property['property_name']);
+            $_SESSION['message'] = "Direct message sent successfully!";
+            $_SESSION['message_type'] = "success";
+        } else {
+            $_SESSION['message'] = "Tenant not found or access denied.";
+            $_SESSION['message_type'] = "error";
+        }
+    } catch (Exception $e) {
+        $_SESSION['message'] = "Error sending message: " . $e->getMessage();
         $_SESSION['message_type'] = "error";
     }
     header("Location: notifications.php");
@@ -181,19 +213,7 @@ $tenants = $stmt->fetchAll();
     </div>
 
     <script>
-        function sendIndividualNotif() {
-            const phone = document.getElementById('tenantSelect').value;
-            const msg = document.getElementById('directText').value;
-            
-            if (!phone || !msg) {
-                alert("Please select a tenant and enter a message.");
-                return;
-            }
-            
-            // For now, simulating the send. In a real app, this would be an AJAX call to a dedicated endpoint.
-            alert("Sent to " + phone + ": " + msg);
-            document.getElementById('directText').value = '';
-        }
+        // Removed old function as we now use form submission
     </script>
 </body>
 </html>

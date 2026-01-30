@@ -14,6 +14,15 @@ class SmsService {
     }
 
     /**
+     * Send a direct message to a specific tenant
+     */
+    public function sendDirectMessage($phone, $message, $propertyName = null) {
+        $shortCode = $propertyName ? strtoupper(substr($propertyName, 0, 10)) : $this->shortCode;
+        $this->shortCode = $shortCode;
+        return $this->sendSms($phone, $message);
+    }
+
+    /**
      * Send a general SMS
      */
     public function sendSms($phone, $message) {

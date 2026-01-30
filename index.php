@@ -1,13 +1,25 @@
 <?php
 session_start();
 require_once 'db_config.php';
-require_once 'SmsService.php';
+
+// Check session timeout (10 minutes)
+if (isset($_SESSION['admin_id']) && isset($_SESSION['last_activity'])) {
+    if (time() - $_SESSION['last_activity'] > 600) { // 10 minutes
+        session_unset();
+        session_destroy();
+        header("Location: auth.html");
+        exit();
+    }
+}
+$_SESSION['last_activity'] = time();
 
 // Check if landlord is logged in
 if (!isset($_SESSION['admin_id'])) {
     header("Location: auth.html");
     exit();
 }
+
+require_once 'SmsService.php';
 
 $landlord_id = $_SESSION['admin_id'];
 $sms = new SmsService(); // Credentials would be loaded from DB/Config in production

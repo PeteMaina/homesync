@@ -2,6 +2,17 @@
 session_start();
 require_once 'db_config.php';
 
+// Check session timeout (10 minutes)
+if (isset($_SESSION['admin_id']) && isset($_SESSION['last_activity'])) {
+    if (time() - $_SESSION['last_activity'] > 600) { // 10 minutes
+        session_unset();
+        session_destroy();
+        header("Location: auth.html");
+        exit();
+    }
+}
+$_SESSION['last_activity'] = time();
+
 // Check if landlord is logged in
 if (!isset($_SESSION['admin_id'])) {
     header("Location: auth.html");
@@ -67,26 +78,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_invoice'])) {
     $tenant_id = $_POST['tenant_id'];
     $month = date('F');
     $year = date('Y');
-    
+
     // Fetch all unpaid/partial bills for this tenant for specific month
     $stmt = $pdo->prepare("
         SELECT b.*, t.name, t.phone_number, p.name as prop_name, u.unit_number
-        FROM bills b 
-        JOIN tenants t ON b.tenant_id = t.id 
+        FROM bills b
+        JOIN tenants t ON b.tenant_id = t.id
         JOIN units u ON b.unit_id = u.id
         JOIN properties p ON u.property_id = p.id
         WHERE b.tenant_id = ? AND b.month = ? AND b.year = ?
     ");
     $stmt->execute([$tenant_id, $month, $year]);
     $tenant_bills = $stmt->fetchAll();
-    
+
     if ($tenant_bills) {
         $data = [
             'property' => $tenant_bills[0]['prop_name'],
             'month' => "$month $year",
             'rent' => 0, 'water_units' => 0, 'water_cost' => 0, 'wifi' => 0, 'garbage' => 0, 'credit' => 0, 'total' => 0
         ];
-        
+
         foreach ($tenant_bills as $tb) {
             if ($tb['bill_type'] == 'rent') $data['rent'] = $tb['amount'];
             if ($tb['bill_type'] == 'water') {
@@ -97,18 +108,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_invoice'])) {
             if ($tb['bill_type'] == 'garbage') $data['garbage'] = $tb['amount'];
             $data['total'] += $tb['balance'];
         }
-        
+
         // Fetch remaining credit
         $cStmt = $pdo->prepare("SELECT balance_credit FROM tenants WHERE id = ?");
         $cStmt->execute([$tenant_id]);
         $data['credit'] = $cStmt->fetchColumn();
-        
+
         if ($sms->sendMonthlyBreakdown($tenant_bills[0]['phone_number'], $tenant_bills[0]['name'], $data)) {
             $_SESSION['message'] = "Invoice sent to " . $tenant_bills[0]['name'];
             $_SESSION['message_type'] = "success";
         }
     }
     header("Location: billing.php?property_id=" . $_POST['property_id']);
+    exit();
+}
+
+// Handle Manual Bill Adjustment
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['apply_adjustment'])) {
+    $bill_id = $_POST['adjust_bill_id'];
+    $adjustment_type = $_POST['adjustment_type'];
+    $amount = floatval($_POST['adjustment_amount']);
+    $payment_method = $_POST['payment_method'] ?? null;
+    $notes = $_POST['adjustment_notes'] ?? '';
+
+    try {
+        $pdo->beginTransaction();
+
+        // Get current bill details
+        $billStmt = $pdo->prepare("SELECT * FROM bills WHERE id = ?");
+        $billStmt->execute([$bill_id]);
+        $bill = $billStmt->fetch();
+
+        if (!$bill) {
+            throw new Exception("Bill not found.");
+        }
+
+        $new_balance = $bill['balance'];
+
+        if ($adjustment_type === 'payment') {
+            // Payment received - reduce balance
+            $new_balance = max(0, $bill['balance'] - $amount);
+
+            // Record payment
+            $payStmt = $pdo->prepare("INSERT INTO payments (bill_id, amount, payment_method, transaction_reference, payment_date) VALUES (?, ?, ?, ?, NOW())");
+            $payStmt->execute([$bill_id, $amount, $payment_method, $notes]);
+
+            // If overpayment, add to tenant credit
+            if ($bill['balance'] < $amount) {
+                $overpayment = $amount - $bill['balance'];
+                $creditStmt = $pdo->prepare("UPDATE tenants SET balance_credit = balance_credit + ? WHERE id = ?");
+                $creditStmt->execute([$overpayment, $bill['tenant_id']]);
+            }
+        } elseif ($adjustment_type === 'credit') {
+            // Add credit - reduce balance
+            $new_balance = max(0, $bill['balance'] - $amount);
+        } elseif ($adjustment_type === 'penalty') {
+            // Add penalty - increase balance
+            $new_balance = $bill['balance'] + $amount;
+        } elseif ($adjustment_type === 'discount') {
+            // Apply discount - reduce balance
+            $new_balance = max(0, $bill['balance'] - $amount);
+        }
+
+        // Update bill balance and status
+        $new_status = $new_balance <= 0 ? 'paid' : ($new_balance < $bill['amount'] ? 'partial' : 'unpaid');
+        $updateStmt = $pdo->prepare("UPDATE bills SET balance = ?, status = ? WHERE id = ?");
+        $updateStmt->execute([$new_balance, $new_status, $bill_id]);
+
+        $pdo->commit();
+        $_SESSION['message'] = "Bill adjustment applied successfully!";
+        $_SESSION['message_type'] = "success";
+
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        $_SESSION['message'] = "Error applying adjustment: " . $e->getMessage();
+        $_SESSION['message_type'] = "error";
+    }
+
+    header("Location: billing.php?property_id=" . $_GET['property_id']);
     exit();
 }
 
@@ -408,13 +485,66 @@ if ($current_property_id) {
         </div>
     </div>
 
+    <!-- Manual Adjust Modal -->
+    <div class="modal" id="adjustModal">
+        <div class="modal-content" style="background: white; padding: 30px; border-radius: 20px; width: 500px; box-shadow: 0 20px 50px rgba(0,0,0,0.2);">
+            <h3>Manual Bill Adjustment</h3>
+            <form method="POST" style="margin-top: 20px;">
+                <input type="hidden" name="adjust_bill_id" id="adjustBillId">
+                <div class="form-group">
+                    <label>Tenant: <span id="adjustTenantName"></span></label>
+                </div>
+                <div class="form-group">
+                    <label>Current Balance: <span id="currentBalance"></span></label>
+                </div>
+                <div class="form-group">
+                    <label>Adjustment Type</label>
+                    <select name="adjustment_type" class="form-control" required>
+                        <option value="payment">Payment Received</option>
+                        <option value="credit">Add Credit</option>
+                        <option value="penalty">Add Penalty</option>
+                        <option value="discount">Apply Discount</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Amount (KES)</label>
+                    <input type="number" step="0.01" name="adjustment_amount" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>Payment Method (for payments)</label>
+                    <select name="payment_method" class="form-control">
+                        <option value="cash">Cash</option>
+                        <option value="mpesa">M-Pesa</option>
+                        <option value="bank">Bank Transfer</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Notes (Optional)</label>
+                    <textarea name="adjustment_notes" class="form-control" rows="3"></textarea>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 30px;">
+                    <button type="button" class="btn btn-outline" style="flex: 1; background:#f8f9fa; border:1px solid #ddd;" onclick="closeAdjustModal()">Cancel</button>
+                    <button type="submit" name="apply_adjustment" class="btn btn-primary" style="flex: 1;">Apply Adjustment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
         function openCustomBillModal() { 
             document.getElementById('customBillModal').style.display = 'flex'; 
         }
         function openManualAdjustModal(id, name, balance) {
-            alert("Adjusting bill #" + id + " for " + name + ". Manual adjustment logic coming soon.");
+            document.getElementById('adjustBillId').value = id;
+            document.getElementById('adjustTenantName').textContent = name;
+            document.getElementById('currentBalance').textContent = 'KES ' + balance;
+            document.getElementById('adjustModal').style.display = 'flex';
+        }
+
+        function closeAdjustModal() {
+            document.getElementById('adjustModal').style.display = 'none';
         }
     </script>
 </body>
