@@ -5,8 +5,8 @@ require_once 'db_config.php';
 
 requireLogin();
 
-$property_id = $_SESSION['property_id'];
-$landlord_name = $_SESSION['user_name'];
+$property_id = isset($_SESSION['property_id']) ? $_SESSION['property_id'] : null;
+$landlord_name = $_SESSION['admin_name'] ?? $_SESSION['admin_email'] ?? 'Admin';
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -70,11 +70,24 @@ $personnel_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gate Personnel Management - HomeSync</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #4361ee;
+            --success: #2ec4b6;
+            --danger: #e71d36;
+            --light: #f1f5f9;
+            --dark: #0f172a;
+            --gray: #6c87a8;
+            --shadow: 0 10px 30px rgba(0,0,0,0.08);
+        }
+
+        * { box-sizing: border-box; }
+        body { background: var(--light); color: var(--dark); display: flex; min-height: 100vh; margin: 0; font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
         .main-content {
-            margin-left: 260px;
-            padding: 24px;
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
         }
         
         .page-header {
@@ -93,19 +106,10 @@ $personnel_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
             color: #6c87a8;
         }
         
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: 0 2px 8px rgba(4, 97, 211, 0.1);
-            margin-bottom: 24px;
-        }
+        .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: var(--shadow); margin-bottom: 24px; }
         
         .card-title {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: #01172e;
+            font-size: 20px; font-weight: 700; margin-bottom: 20px; color: #01172e; display: flex; gap: 10px; align-items: center;
         }
         
         .form-grid {
@@ -151,32 +155,14 @@ $personnel_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
             transition: all 0.2s ease;
         }
         
-        .btn-primary {
-            background: #1867ff;
-            color: white;
-        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { filter: brightness(0.95); }
         
-        .btn-primary:hover {
-            background: #0461d3;
-        }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-danger:hover { filter: brightness(0.95); }
         
-        .btn-danger {
-            background: #e74c3c;
-            color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #c0392b;
-        }
-        
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-        
-        .btn-secondary:hover {
-            background: #5a6268;
-        }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { filter: brightness(0.95); }
         
         .btn-sm {
             padding: 6px 12px;
@@ -188,18 +174,8 @@ $personnel_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
             border-collapse: collapse;
         }
         
-        .table th,
-        .table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #e4f0ff;
-        }
-        
-        .table th {
-            background: #f0f7ff;
-            font-weight: 600;
-            color: #01172e;
-        }
+        .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #e4f0ff; }
+        .table th { background: #f0f7ff; font-weight: 600; color: #01172e; position: sticky; top: 0; }
         
         .table tbody tr:hover {
             background: #f9fbfd;
@@ -218,22 +194,12 @@ $personnel_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
             color: #155724;
         }
         
-        .alert {
-            padding: 14px 18px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-        }
-        
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .alert-danger {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+        .alert { padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; border: 1px solid transparent; }
+        .alert-success { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+        .alert-danger { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+
+        @media (max-width: 1024px) {
+            .main-content { padding: 20px; }
         }
     </style>
 </head>

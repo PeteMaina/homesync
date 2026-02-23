@@ -598,7 +598,7 @@
               $message = "Visitor logged successfully!";
               $message_type = "success";
           } else {
-              $message = "Error: " . $conn->error;
+              $message = "Error: " . $stmt->error;
               $message_type = "error";
           }
           
@@ -616,7 +616,7 @@
               $message = "Visitor timed out successfully!";
               $message_type = "success";
           } else {
-              $message = "Error: " . $conn->error;
+              $message = "Error: " . $stmt->error;
               $message_type = "error";
           }
           

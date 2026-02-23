@@ -170,6 +170,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <i class="fas fa-user-friends"></i>
             <span>Visitors</span>
         </a>
+        <a href="agreements.php" class="nav-item <?php echo $current_page == 'agreements.php' ? 'active' : ''; ?>">
+            <i class="fas fa-file-signature"></i>
+            <span>Agreements</span>
+        </a>
         <a href="gate_personnel.php" class="nav-item <?php echo $current_page == 'gate_personnel.php' ? 'active' : ''; ?>">
             <i class="fas fa-shield-alt"></i>
             <span>Gate Personnel</span>

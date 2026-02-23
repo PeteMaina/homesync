@@ -5,8 +5,43 @@ require_once 'db_config.php';
 // Check if user is logged in
 requireLogin();
 
-// Fetch properties to show in management
+// Handle updates/deletes
+$message = null;
+$message_type = null;
 $landlord_id = $_SESSION['admin_id'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    try {
+        if ($action === 'update_property') {
+            $pid = intval($_POST['property_id'] ?? 0);
+            $name = trim($_POST['name'] ?? '');
+            $location = trim($_POST['location'] ?? '');
+            if ($pid && $name !== '') {
+                $stmt = $pdo->prepare("UPDATE properties SET name = ?, location = ? WHERE id = ? AND landlord_id = ?");
+                $stmt->execute([$name, $location, $pid, $landlord_id]);
+                $message = 'Property updated successfully';
+                $message_type = 'success';
+            } else {
+                $message = 'Name is required';
+                $message_type = 'error';
+            }
+        } elseif ($action === 'delete_property') {
+            $pid = intval($_POST['property_id'] ?? 0);
+            if ($pid) {
+                $stmt = $pdo->prepare("DELETE FROM properties WHERE id = ? AND landlord_id = ?");
+                $stmt->execute([$pid, $landlord_id]);
+                $message = 'Property deleted';
+                $message_type = 'success';
+            }
+        }
+    } catch (Exception $e) {
+        $message = 'Error: ' . $e->getMessage();
+        $message_type = 'error';
+    }
+}
+
+// Fetch properties to show in management (after processing any changes)
 $stmt = $pdo->prepare("SELECT * FROM properties WHERE landlord_id = ?");
 $stmt->execute([$landlord_id]);
 $properties = $stmt->fetchAll();
@@ -82,6 +117,11 @@ $properties = $stmt->fetchAll();
         .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
         .btn-outline:hover { background: var(--primary); color: white; }
 
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { filter: brightness(0.95); }
+        .btn-secondary { background: #6c757d; color: #fff; }
+        .btn-sm { padding: 8px 12px; font-size: 12px; }
+
         .property-item {
             display: flex;
             justify-content: space-between;
@@ -91,6 +131,8 @@ $properties = $stmt->fetchAll();
             border-radius: 10px;
             font-size: 14px;
         }
+
+        .property-actions { display: flex; gap: 8px; align-items: center; }
     </style>
 </head>
 <body>
@@ -102,6 +144,12 @@ $properties = $stmt->fetchAll();
                 <h1>Settings & Management</h1>
             </div>
 
+            <?php if ($message): ?>
+                <div style="padding:12px 16px; border-radius:10px; margin-bottom:16px; <?php echo $message_type==='success' ? 'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0' : 'background:#fef2f2;color:#991b1b;border:1px solid #fecaca'; ?>">
+                    <?php echo htmlspecialchars($message); ?>
+                </div>
+            <?php endif; ?>
+
             <div class="settings-grid">
                 <!-- Property Management -->
                 <div class="settings-card">
@@ -110,9 +158,23 @@ $properties = $stmt->fetchAll();
                     <div class="property-list">
                         <?php if (count($properties) > 0): ?>
                             <?php foreach ($properties as $p): ?>
-                                <div class="property-item">
-                                    <span><strong><?php echo htmlspecialchars($p['name']); ?></strong></span>
-                                    <small><?php echo htmlspecialchars($p['location']); ?></small>
+                                <div class="property-item" id="prop-<?php echo $p['id']; ?>">
+                                    <div style="display:flex; flex-direction: column; gap: 4px;">
+                                        <span><strong><?php echo htmlspecialchars($p['name']); ?></strong></span>
+                                        <small><?php echo htmlspecialchars($p['location']); ?></small>
+                                    </div>
+                                    <div class="property-actions">
+                                        <button type="button" class="btn btn-outline btn-sm" onclick="startEdit(<?php echo $p['id']; ?>, '<?php echo htmlspecialchars(addslashes($p['name'])); ?>', '<?php echo htmlspecialchars(addslashes($p['location'])); ?>')">
+                                            <i class="fas fa-pen"></i> Edit
+                                        </button>
+                                        <form method="POST" onsubmit="return confirm('Delete this property? This action cannot be undone.');">
+                                            <input type="hidden" name="action" value="delete_property">
+                                            <input type="hidden" name="property_id" value="<?php echo $p['id']; ?>">
+                                            <button type="submit" class="btn btn-danger btn-sm">
+                                                <i class="fas fa-trash"></i> Delete
+                                            </button>
+                                        </form>
+                                    </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>
@@ -160,5 +222,37 @@ $properties = $stmt->fetchAll();
             </div>
         </div>
     </div>
+    <script>
+        function startEdit(id, currentName, currentLocation) {
+            const container = document.getElementById('prop-' + id);
+            if (!container) return;
+
+            // Build a small inline edit form programmatically
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.style.display = 'flex';
+            form.style.gap = '8px';
+            form.style.width = '100%';
+            form.style.alignItems = 'center';
+            form.innerHTML = `
+                <div style="display:flex; flex-direction: column; gap: 6px; flex: 1;">
+                    <input type="text" name="name" placeholder="Property name" required value="${currentName.replace(/"/g, '&quot;')}" style="padding:10px;border:1px solid #ddd;border-radius:8px;">
+                    <input type="text" name="location" placeholder="Location" value="${currentLocation.replace(/"/g, '&quot;')}" style="padding:10px;border:1px solid #ddd;border-radius:8px;">
+                </div>
+                <div class="property-actions">
+                    <input type="hidden" name="action" value="update_property">
+                    <input type="hidden" name="property_id" value="${id}">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-save"></i> Save</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="cancelEdit(${id}, '${currentName.replace(/'/g, "\\'")}', '${currentLocation.replace(/'/g, "\\'")}')"><i class="fas fa-times"></i> Cancel</button>
+                </div>
+            `;
+            container.replaceWith(form);
+        }
+
+        function cancelEdit(id, name, location) {
+            // Reload page to restore original list (simplest approach)
+            window.location.reload();
+        }
+    </script>
 </body>
 </html>

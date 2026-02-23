@@ -10,7 +10,7 @@ requireLogin();
 $tenants = [];
 try {
     $stmt = $pdo->prepare("
-        SELECT t.*, p.name as property_name, u.unit_number 
+        SELECT t.*, p.name as property_name, u.unit_number, u.rent_amount AS unit_rent
         FROM tenants t 
         JOIN properties p ON t.property_id = p.id 
         JOIN units u ON t.unit_id = u.id 
@@ -43,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_tenant'])) {
     $has_garbage = isset($_POST['edit_has_garbage']) ? 1 : 0;
     $initial_water_reading = $_POST['edit_initial_water_reading'] ?? 0;
     $initial_electricity_reading = $_POST['edit_initial_electricity_reading'] ?? 0;
+    $edit_rent_amount = isset($_POST['edit_rent_amount']) && $_POST['edit_rent_amount'] !== '' ? floatval($_POST['edit_rent_amount']) : null;
 
     try {
         // First verify this tenant belongs to the current landlord
@@ -64,16 +65,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_tenant'])) {
                 // Alter table to add initial readings columns if they don't exist
                 $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
                 $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+                $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS rent_amount DECIMAL(10,2) NULL");
 
                 // Update tenant
-                $stmt = $pdo->prepare("UPDATE tenants SET name = ?, id_number = ?, phone_number = ?, has_wifi = ?, has_garbage = ?, initial_water_reading = ?, initial_electricity_reading = ? WHERE id = ?");
-                $stmt->execute([$name, $id_number, $phone_number, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading, $tenant_id]);
+                $stmt = $pdo->prepare("UPDATE tenants SET name = ?, id_number = ?, phone_number = ?, has_wifi = ?, has_garbage = ?, initial_water_reading = ?, initial_electricity_reading = ?, rent_amount = ? WHERE id = ?");
+                $stmt->execute([$name, $id_number, $phone_number, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading, $edit_rent_amount, $tenant_id]);
 
                 $success = "Tenant updated successfully!";
 
                 // Refresh the tenants list
                 $stmt = $pdo->prepare("
-                    SELECT t.*, p.name as property_name, u.unit_number
+                    SELECT t.*, p.name as property_name, u.unit_number, u.rent_amount AS unit_rent
                     FROM tenants t
                     JOIN properties p ON t.property_id = p.id
                     JOIN units u ON t.unit_id = u.id
@@ -120,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_tenant'])) {
 
                 // Refresh the tenants list
                 $stmt = $pdo->prepare("
-                    SELECT t.*, p.name as property_name, u.unit_number
+                    SELECT t.*, p.name as property_name, u.unit_number, u.rent_amount AS unit_rent
                     FROM tenants t
                     JOIN properties p ON t.property_id = p.id
                     JOIN units u ON t.unit_id = u.id
@@ -146,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
     $move_in_date = $_POST['move_in_date'];
     $has_wifi = isset($_POST['has_wifi']) ? 1 : 0;
     $has_garbage = isset($_POST['has_garbage']) ? 1 : 0;
+    $rent_amount = isset($_POST['rent_amount']) && $_POST['rent_amount'] !== '' ? floatval($_POST['rent_amount']) : null;
     
     // Handle file upload (ID picture) with security validation
     $id_picture = null;
@@ -199,14 +202,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
             $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
             $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+            $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS rent_amount DECIMAL(10,2) NULL");
 
             // Get initial readings from form
             $initial_water_reading = $_POST['initial_water_reading'] ?? 0;
             $initial_electricity_reading = $_POST['initial_electricity_reading'] ?? 0;
 
             // Insert new tenant
-            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture, has_wifi, has_garbage, initial_water_reading, initial_electricity_reading) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading]);
+            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture, has_wifi, has_garbage, initial_water_reading, initial_electricity_reading, rent_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading, $rent_amount]);
             
             $success = "Tenant added successfully!";
             
@@ -841,6 +845,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                                 <th>Name</th>
                                 <th>ID Number</th>
                                 <th>House Number</th>
+                                <th>Rent</th>
                                 <th>Phone Number</th>
                                 <th>Services</th>
                                 <th>Move-in Date</th>
@@ -867,6 +872,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                                             <strong><?php echo htmlspecialchars($tenant['unit_number']); ?></strong><br>
                                             <small><?php echo htmlspecialchars($tenant['property_name']); ?></small>
                                         </td>
+                                        <td>
+                                            <?php
+                                                $displayRent = null;
+                                                if (!empty($tenant['rent_amount']) && (float)$tenant['rent_amount'] > 0) {
+                                                    $displayRent = (float)$tenant['rent_amount'];
+                                                } elseif (isset($tenant['unit_rent'])) {
+                                                    $displayRent = (float)$tenant['unit_rent'];
+                                                }
+                                                echo $displayRent !== null ? 'KES ' . number_format($displayRent, 2) : '—';
+                                            ?>
+                                        </td>
                                         <td><?php echo htmlspecialchars($tenant['phone_number']); ?></td>
                                         <td>
                                             <div style="display: flex; gap: 8px;">
@@ -877,14 +893,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                                         <td><?php echo date('M j, Y', strtotime($tenant['move_in_date'])); ?></td>
                                         <td><span class="status-badge status-occupied">Occupied</span></td>
                                         <td>
-                                            <button class="action-btn btn-edit" onclick="openEditModal(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>', '<?php echo htmlspecialchars($tenant['id_number']); ?>', '<?php echo htmlspecialchars($tenant['phone_number']); ?>', '<?php echo htmlspecialchars($tenant['unit_number']); ?>', '<?php echo htmlspecialchars($tenant['property_name']); ?>', '<?php echo $tenant['has_wifi']; ?>', '<?php echo $tenant['has_garbage']; ?>', '<?php echo $tenant['initial_water_reading']; ?>', '<?php echo $tenant['initial_electricity_reading']; ?>')"><i class="fas fa-edit"></i></button>
+                                            <button class="action-btn btn-edit" onclick="openEditModal(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>', '<?php echo htmlspecialchars($tenant['id_number']); ?>', '<?php echo htmlspecialchars($tenant['phone_number']); ?>', '<?php echo htmlspecialchars($tenant['unit_number']); ?>', '<?php echo htmlspecialchars($tenant['property_name']); ?>', '<?php echo $tenant['has_wifi']; ?>', '<?php echo $tenant['has_garbage']; ?>', '<?php echo $tenant['initial_water_reading']; ?>', '<?php echo $tenant['initial_electricity_reading']; ?>', '<?php echo $tenant['rent_amount'] ?? '' ; ?>')"><i class="fas fa-edit"></i></button>
                                             <button class="action-btn btn-delete" onclick="confirmDelete(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>')"><i class="fas fa-trash"></i></button>
+                                            <form method="POST" action="agreement_generate.php" style="display:inline">
+                                                <input type="hidden" name="tenant_id" value="<?php echo $tenant['id']; ?>">
+                                                <button class="action-btn btn-edit" title="Generate Agreement" style="background: #10b981; color: #fff"><i class="fas fa-file-signature"></i></button>
+                                            </form>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="8" class="text-center">No tenants found. Add your first tenant using the button above.</td>
+                                    <td colspan="10" class="text-center">No tenants found. Add your first tenant using the button above.</td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -946,12 +966,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                         <input type="tel" class="form-control" name="phone_number" required placeholder="e.g. 0712345678">
                     </div>
 
+                    <div class="form-group">
+                        <label class="form-label">Monthly Rent (KES)</label>
+                        <input type="number" step="0.01" class="form-control" name="rent_amount" placeholder="Leave blank to use unit default">
+                    </div>
+
                     <div style="display: flex; gap: 20px; margin-bottom: 20px;">
                         <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
-                            <input type="checkbox" name="has_wifi" checked style="width: 18px; height: 18px;"> Enable WiFi billing
+                            <input type="checkbox" name="has_wifi" style="width: 18px; height: 18px;"> Enable WiFi billing
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
-                            <input type="checkbox" name="has_garbage" checked style="width: 18px; height: 18px;"> Enable Garbage billing
+                            <input type="checkbox" name="has_garbage" style="width: 18px; height: 18px;"> Enable Garbage billing
                         </label>
                     </div>
                     
@@ -1008,6 +1033,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                     <div class="form-group">
                         <label class="form-label">Phone Number</label>
                         <input type="tel" class="form-control" name="edit_phone_number" id="editPhoneNumber" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Monthly Rent (KES)</label>
+                        <input type="number" step="0.01" class="form-control" name="edit_rent_amount" id="editRentAmount" placeholder="Leave blank to use unit default">
                     </div>
 
                     <div style="display: flex; gap: 20px; margin-bottom: 20px;">
@@ -1118,7 +1148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         });
 
         // Edit tenant modal functionality
-        function openEditModal(tenantId, name, idNumber, phoneNumber, unitNumber, propertyName, hasWifi, hasGarbage, initialWaterReading, initialElectricityReading) {
+        function openEditModal(tenantId, name, idNumber, phoneNumber, unitNumber, propertyName, hasWifi, hasGarbage, initialWaterReading, initialElectricityReading, rentAmount) {
             document.getElementById('editTenantId').value = tenantId;
             document.getElementById('editName').value = name;
             document.getElementById('editIdNumber').value = idNumber;
@@ -1127,6 +1157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             document.getElementById('editHasGarbage').checked = hasGarbage == '1';
             document.getElementById('editInitialWaterReading').value = initialWaterReading || 0;
             document.getElementById('editInitialElectricityReading').value = initialElectricityReading || 0;
+            document.getElementById('editRentAmount').value = (rentAmount && rentAmount !== 'null') ? rentAmount : '';
             editTenantModal.style.display = 'flex';
         }
 

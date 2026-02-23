@@ -27,7 +27,7 @@ try {
 
     foreach ($units as $unit) {
         // 2. Fetch active tenant and their enrollment status
-        $tStmt = $pdo->prepare("SELECT id, name, balance_credit, has_wifi, has_garbage FROM tenants WHERE unit_id = ? AND status = 'active' LIMIT 1");
+        $tStmt = $pdo->prepare("SELECT id, name, balance_credit, has_wifi, has_garbage, rent_amount FROM tenants WHERE unit_id = ? AND status = 'active' LIMIT 1");
         $tStmt->execute([$unit['id']]);
         $tenant = $tStmt->fetch();
 
@@ -40,7 +40,9 @@ try {
             $checkRent->execute([$unit['id'], $month, $year]);
             
             if (!$checkRent->fetch()) {
-                $rent = $unit['rent_amount'];
+                $rent = (isset($tenant['rent_amount']) && $tenant['rent_amount'] !== null && $tenant['rent_amount'] > 0)
+                    ? (float)$tenant['rent_amount']
+                    : (float)$unit['rent_amount'];
                 $rent_balance = $rent;
                 
                 if ($credit > 0) {
