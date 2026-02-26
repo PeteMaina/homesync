@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS landlords (
     email VARCHAR(100) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     phone_number VARCHAR(15) NULL,
+    role ENUM('admin', 'superadmin') DEFAULT 'admin',
+    status ENUM('active', 'banned') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -52,6 +54,9 @@ CREATE TABLE IF NOT EXISTS tenants (
     phone_number VARCHAR(15) NOT NULL,
     move_in_date DATE NOT NULL,
     status ENUM('active', 'vacated') DEFAULT 'active',
+    balance_credit DECIMAL(10, 2) DEFAULT 0,
+    has_wifi BOOLEAN DEFAULT FALSE,
+    has_garbage BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (property_id) REFERENCES properties(id),
     FOREIGN KEY (unit_id) REFERENCES units(id)
@@ -69,6 +74,8 @@ CREATE TABLE IF NOT EXISTS bills (
     year INT NOT NULL,
     due_date DATE NOT NULL,
     status ENUM('paid', 'partial', 'unpaid') DEFAULT 'unpaid',
+    reading_curr DECIMAL(10, 2) DEFAULT 0,
+    reading_prev DECIMAL(10, 2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id),
     FOREIGN KEY (unit_id) REFERENCES units(id)
@@ -106,16 +113,40 @@ CREATE TABLE IF NOT EXISTS security_links (
     FOREIGN KEY (property_id) REFERENCES properties(id) ON DELETE CASCADE
 );
 
--- 9. Gate Personnel Authentication
+-- 9. Tenant Access Links
+CREATE TABLE IF NOT EXISTS tenant_links (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    access_token VARCHAR(64) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NULL,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+-- 10. Gate Personnel Authentication
 CREATE TABLE IF NOT EXISTS gate_personnel (
     id INT AUTO_INCREMENT PRIMARY KEY,
     property_id INT NOT NULL,
     username VARCHAR(50) NOT NULL,
     password VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (property_id) REFERENCES properties(id) ON DELETE CASCADE,
     UNIQUE KEY unique_username (property_id, username)
+);
+
+-- 11. Caretaker Authentication
+CREATE TABLE IF NOT EXISTS caretakers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    property_id INT NOT NULL,
+    username VARCHAR(50) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (property_id) REFERENCES properties(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_caretaker_username (property_id, username)
 );
 
 -- 10. Visitor Logs

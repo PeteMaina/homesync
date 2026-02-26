@@ -11,14 +11,15 @@ try {
     $stmt = $pdo->prepare("
         SELECT v.*, u.unit_number as tenant_house, t.name as tenant_name
         FROM visitors v
-        LEFT JOIN tenants t ON v.tenant_id = t.id
-        LEFT JOIN units u ON t.unit_id = u.id
-        LEFT JOIN properties p ON u.property_id = p.id
+        LEFT JOIN units u ON v.unit_id = u.id
+        LEFT JOIN tenants t ON v.tenant_id = t.id AND t.status = 'active'
+        LEFT JOIN properties p ON v.property_id = p.id
         WHERE p.landlord_id = ?
         ORDER BY v.visit_date DESC, v.time_in DESC
     ");
     $stmt->execute([$_SESSION['admin_id']]);
     $visitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (PDOException $e) {
     $error = "Error fetching visitors: " . $e->getMessage();
 }
@@ -31,11 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
     $query = "
         SELECT v.*, u.unit_number as tenant_house, t.name as tenant_name
         FROM visitors v
-        LEFT JOIN tenants t ON v.tenant_id = t.id
-        LEFT JOIN units u ON t.unit_id = u.id
-        LEFT JOIN properties p ON u.property_id = p.id
+        LEFT JOIN units u ON v.unit_id = u.id
+        LEFT JOIN tenants t ON v.tenant_id = t.id AND t.status = 'active'
+        LEFT JOIN properties p ON v.property_id = p.id
         WHERE p.landlord_id = ?
     ";
+
     $params = [$_SESSION['admin_id']];
 
     if (!empty($filter_date)) {
@@ -551,10 +553,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
             <div class="page-header">
                 <h1 class="page-title">Visitor Management</h1>
                 <div class="page-actions">
-                    <button class="btn btn-primary" onclick="window.open('gate_links.php', '_self')">
-                        <i class="fas fa-link"></i> Manage Gate Links
+                    <button class="btn btn-primary" onclick="window.location.href='access_control.php'">
+                        <i class="fas fa-users-cog"></i> Personnel Management
                     </button>
                 </div>
+
             </div>
             
             <!-- Notifications -->
@@ -665,8 +668,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                 <th>Visitor Details</th>
                                 <th>Visit Information</th>
                                 <th>Host Information</th>
-                                <th>Vehicle</th>
+                                <th>Vehicle & ID</th>
                                 <th>Status</th>
+
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -704,11 +708,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                             <div class="visitor-details">
                                                 <?php if (!empty($visitor['number_plate'])): ?>
                                                     <div><strong>Plate:</strong> <?php echo htmlspecialchars($visitor['number_plate']); ?></div>
+                                                <?php endif; ?>
+                                                <?php if (!empty($visitor['id_image'])): ?>
+                                                    <div><a href="uploads/visitors/<?php echo $visitor['id_image']; ?>" target="_blank" style="color:var(--primary); font-size:12px;"><i class="fas fa-id-card"></i> View ID Image</a></div>
                                                 <?php else: ?>
-                                                    <div>No vehicle</div>
+                                                    <div style="font-size:11px; color:var(--gray);">No ID Image captured</div>
                                                 <?php endif; ?>
                                             </div>
                                         </td>
+
                                         <td>
                                             <?php if (empty($visitor['time_out'])): ?>
                                                 <span class="status-badge status-active">Active</span>

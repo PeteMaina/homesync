@@ -202,12 +202,18 @@ $property_tenants = [];
 if ($current_property_id) {
     // Bills
     $stmt = $pdo->prepare("
-        SELECT b.*, t.name as tenant_name, u.unit_number 
+        SELECT 
+            b.tenant_id, b.unit_id, b.month, b.year,
+            SUM(b.amount) as amount, 
+            SUM(b.balance) as balance,
+            t.name as tenant_name, u.unit_number,
+            GROUP_CONCAT(DISTINCT b.bill_type) as bill_types
         FROM bills b 
         JOIN units u ON b.unit_id = u.id 
         JOIN tenants t ON b.tenant_id = t.id 
         WHERE u.property_id = ? 
-        ORDER BY b.created_at DESC
+        GROUP BY b.unit_id, b.month, b.year
+        ORDER BY b.year DESC, b.month DESC, u.unit_number ASC
     ");
     $stmt->execute([$current_property_id]);
     $bills = $stmt->fetchAll();
@@ -370,20 +376,27 @@ if ($current_property_id) {
                                         <strong><?php echo htmlspecialchars($b['tenant_name']); ?></strong><br>
                                         <small><?php echo htmlspecialchars($b['unit_number']); ?></small>
                                     </td>
-                                    <td><span style="text-transform: capitalize;"><?php echo $b['bill_type']; ?></span></td>
+                                    <td>
+                                        <span style="text-transform: capitalize; font-size: 11px; color: var(--gray);">
+                                            <?php echo str_replace(',', ', ', $b['bill_types']); ?>
+                                        </span>
+                                    </td>
                                     <td><?php echo $b['month'] . ' ' . $b['year']; ?></td>
                                     <td>KES <?php echo number_format($b['amount']); ?></td>
                                     <td style="font-weight: 600; color: <?php echo $b['balance'] > 0 ? 'var(--danger)' : 'var(--success)'; ?>">
                                         KES <?php echo number_format($b['balance']); ?>
                                     </td>
                                     <td>
-                                        <span class="status-badge status-<?php echo $b['status']; ?>">
-                                            <?php echo ucfirst($b['status']); ?>
+                                        <?php 
+                                        $status = $b['balance'] <= 0 ? 'paid' : ($b['balance'] < $b['amount'] ? 'partial' : 'unpaid');
+                                        ?>
+                                        <span class="status-badge status-<?php echo $status; ?>">
+                                            <?php echo ucfirst($status); ?>
                                         </span>
                                     </td>
                                     <td style="display: flex; gap: 5px;">
-                                        <button class="btn btn-primary btn-sm" onclick="openManualAdjustModal(<?php echo $b['id']; ?>, '<?php echo $b['tenant_name']; ?>', <?php echo $b['balance']; ?>)">
-                                            <i class="fas fa-edit"></i>
+                                        <button class="btn btn-primary btn-sm" onclick="alert('Individual bill adjustment coming soon, or use the \'Create Custom Bill\' to add/deduct.')">
+                                            <i class="fas fa-info-circle"></i>
                                         </button>
                                         <form method="POST" style="margin:0;">
                                             <input type="hidden" name="tenant_id" value="<?php echo $b['tenant_id']; ?>">

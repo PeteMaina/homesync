@@ -162,23 +162,20 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <i class="fas fa-file-invoice-dollar"></i>
             <span>Billing</span>
         </a>
-        <a href="tenants.php" class="nav-item <?php echo $current_page == 'tenants.php' ? 'active' : ''; ?>">
-            <i class="fas fa-users"></i>
-            <span>Tenants</span>
-        </a>
-        <a href="visitors.php" class="nav-item <?php echo $current_page == 'visitors.php' ? 'active' : ''; ?>">
+        <a href="contractors.php" class="nav-item <?php echo $current_page == 'contractors.php' ? 'active' : ''; ?>">
             <i class="fas fa-user-friends"></i>
-            <span>Visitors</span>
-        </a>
-        <a href="gate_personnel.php" class="nav-item <?php echo $current_page == 'gate_personnel.php' ? 'active' : ''; ?>">
-            <i class="fas fa-shield-alt"></i>
-            <span>Gate Personnel</span>
+            <span>Contractors</span>
         </a>
         <a href="notifications.php" class="nav-item <?php echo $current_page == 'notifications.php' ? 'active' : ''; ?>">
             <i class="fas fa-bell"></i>
             <span>Notifications</span>
         </a>
+        <a href="visitors.php" class="nav-item <?php echo $current_page == 'visitors.php' ? 'active' : ''; ?>">
+            <i class="fas fa-user-shield"></i>
+            <span>Visitors</span>
+        </a>
         <a href="settings.php" class="nav-item <?php echo $current_page == 'settings.php' ? 'active' : ''; ?>">
+
             <i class="fas fa-cog"></i>
             <span>Settings</span>
         </a>

@@ -142,10 +142,10 @@ $properties = $stmt->fetchAll();
 
                 <!-- Security Management -->
                 <div class="settings-card">
-                    <h3><i class="fas fa-shield-alt"></i> Security & Access</h3>
-                    <p>Manage security tokens for the gate portal and visitor logging system.</p>
+                    <h3><i class="fas fa-user-shield"></i> Personnel Management</h3>
+                    <p>Provision permanent accounts for Gate Personnel and Caretakers. Manage their access to specific properties.</p>
                     <div style="margin-top: auto;">
-                        <a href="gate_links.php" class="btn btn-primary" style="width: 100%;">Manage Gate Links</a>
+                        <a href="access_control.php" class="btn btn-primary" style="width: 100%;">Manage Personnel Access</a>
                     </div>
                 </div>
 

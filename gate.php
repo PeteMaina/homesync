@@ -5,23 +5,19 @@ require_once 'SmsService.php';
 
 $sms = new SmsService(); // Credentials should be configured in SmsService.php or env
 
-// Check for token in URL
-$token = $_GET['token'] ?? '';
-$property = null;
-
-if ($token) {
-    $stmt = $pdo->prepare("SELECT p.*, s.expires_at FROM properties p JOIN security_links s ON p.id = s.property_id WHERE s.access_token = ?");
-    $stmt->execute([$token]);
-    $property = $stmt->fetch();
-    
-    // Check if token is expired
-    if ($property && $property['expires_at'] && strtotime($property['expires_at']) < time()) {
-        die("<h1>Access Denied</h1><p>This security token has expired. Please contact the property admin for a new access link.</p>");
-    }
+if (!isset($_SESSION['personnel_id']) || $_SESSION['personnel_role'] !== 'gate') {
+    header("Location: personnel_login.php");
+    exit();
 }
 
+$property_id = $_SESSION['personnel_property_id'];
+
+$stmt = $pdo->prepare("SELECT * FROM properties WHERE id = ?");
+$stmt->execute([$property_id]);
+$property = $stmt->fetch();
+
 if (!$property) {
-    die("<h1>Access Denied</h1><p>Invalid or expired security token.</p>");
+    die("<h1>Error</h1><p>Assigned property not found.</p>");
 }
 
 // Handle Visitor Log Submission (Entry)
@@ -31,6 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['log_visitor'])) {
     $id_number = $_POST['v_id_number'] ?? '';
     $plate = $_POST['v_plate'] ?? '';
     $unit_id = $_POST['unit_id'];
+    $id_image = "";
+
+    if (isset($_FILES['id_image']) && $_FILES['id_image']['error'] === 0) {
+        $ext = pathinfo($_FILES['id_image']['name'], PATHINFO_EXTENSION);
+        $id_image = 'unit_' . $unit_id . '_id_' . time() . '.' . $ext;
+        move_uploaded_file($_FILES['id_image']['tmp_name'], 'uploads/visitors/' . $id_image);
+    }
     
     // Get tenant and unit info
     $stmt = $pdo->prepare("
@@ -42,8 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['log_visitor'])) {
     $stmt->execute([$unit_id]);
     $data = $stmt->fetch();
     
-    $stmt = $pdo->prepare("INSERT INTO visitors (property_id, tenant_id, name, id_number, phone_number, number_plate, visit_date, time_in) VALUES (?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())");
-    $stmt->execute([$property['id'], $data['tenant_id'] ?? null, $name, $id_number, $phone, $plate]);
+    $stmt = $pdo->prepare("INSERT INTO visitors (property_id, tenant_id, unit_id, name, id_number, phone_number, number_plate, id_image, visit_date, time_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())");
+    $stmt->execute([$property['id'], $data['tenant_id'] ?? null, $unit_id, $name, $id_number, $phone, $plate, $id_image]);
+
+
     
     // Send SMS Notifications
     if ($data) {
@@ -74,18 +79,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout_visitor'])) {
 $stmt = $pdo->prepare("
     SELECT v.*, u.unit_number 
     FROM visitors v 
-    LEFT JOIN tenants t ON v.tenant_id = t.id
-    LEFT JOIN units u ON t.unit_id = u.id
+    LEFT JOIN units u ON v.unit_id = u.id
     WHERE v.property_id = ? AND v.time_out IS NULL AND v.visit_date = CURDATE()
     ORDER BY v.time_in DESC
 ");
+
 $stmt->execute([$property['id']]);
 $active_visitors = $stmt->fetchAll();
 
-// Fetch active tenants for matching
-$stmt = $pdo->prepare("SELECT t.name, u.unit_number, u.id as unit_id FROM tenants t JOIN units u ON t.unit_id = u.id WHERE t.property_id = ? AND t.status = 'active' ORDER BY u.unit_number");
+// Fetch all units for the property
+$stmt = $pdo->prepare("SELECT u.unit_number, u.id as unit_id, t.name as tenant_name FROM units u LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active' WHERE u.property_id = ? ORDER BY u.unit_number");
 $stmt->execute([$property['id']]);
-$tenants = $stmt->fetchAll();
+$units = $stmt->fetchAll();
+
 ?>
 
 <!DOCTYPE html>
@@ -97,87 +103,108 @@ $tenants = $stmt->fetchAll();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background: #f8fafc; padding: 20px; color: #1e293b; }
-        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
-        h1 { font-size: 20px; margin-bottom: 5px; color: #4361ee; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 5px; }
-        .form-control { width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; }
-        .btn { width: 100%; padding: 12px; background: #4361ee; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
-        .alert { padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
-        .alert-success { background: #dcfce7; color: #166534; }
-        .tenant-match { background: #f1f5f9; padding: 15px; border-radius: 8px; font-size: 13px; margin-top: 20px; }
-        .active-visitors { margin-top: 30px; border-top: 2px solid #f1f5f9; padding-top: 20px; }
-        .visitor-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e2e8f0; }
-        .visitor-info h4 { font-size: 14px; margin-bottom: 2px; }
-        .visitor-info p { font-size: 12px; color: #64748b; }
-        .btn-logout { background: #ef4444; color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; border: none; cursor: pointer; }
-        .btn-logout:hover { background: #dc2626; }
-        .search-box { margin-bottom: 15px; position: relative; }
-        .search-box i { position: absolute; left: 10px; top: 12px; color: #94a3b8; }
-        .search-box input { padding-left: 35px; }
-        .required::after { content: " *"; color: #ef4444; }
+        :root { --primary: #4361ee; --secondary: #1e293b; --bg: #f8fafc; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); margin: 0; color: #1e293b; }
+        .header { background: var(--secondary); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .container { max-width: 600px; margin: 40px auto; padding: 0 20px; }
+        .card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        h1 { font-size: 24px; margin-bottom: 20px; color: var(--primary); display: flex; align-items: center; gap: 10px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #64748b; }
+        .form-control { width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; box-sizing: border-box; transition: 0.3s; }
+        .form-control:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1); }
+        .btn { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.3s; }
+        .btn:hover { background: #3a56d4; transform: translateY(-2px); }
+        .alert { padding: 15px; border-radius: 12px; margin-bottom: 20px; font-size: 14px; }
+        .alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .visitor-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #fff; border-radius: 15px; margin-bottom: 12px; border: 1px solid #e2e8f0; transition: 0.3s; }
+        .visitor-item:hover { transform: scale(1.02); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        .btn-logout { background: #fee2e2; color: #ef4444; padding: 8px 16px; border-radius: 10px; font-size: 12px; border: none; font-weight: 600; cursor: pointer; }
+        .btn-logout:hover { background: #fecaca; }
+        .badge { padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .badge-info { background: #e0e7ff; color: #4361ee; }
     </style>
 </head>
 <body>
+    <div class="header">
+        <div style="display:flex; align-items:center; gap:12px;">
+            <div style="background:var(--primary); width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center;">
+                <i class="fas fa-shield-alt" style="color:white;"></i>
+            </div>
+            <div>
+                <h2 style="margin:0; font-size:16px;">HomeSync Security</h2>
+                <p style="margin:0; font-size:12px; opacity:0.7;"><?php echo htmlspecialchars($property['name']); ?></p>
+            </div>
+        </div>
+        <div style="text-align:right;">
+            <span style="font-size:12px; opacity:0.7;">Logging in as: <strong>Gate Officer</strong></span><br>
+            <a href="logout.php" style="color:#fca5a5; font-size:12px; text-decoration:none; font-weight:600;">Sign Out</a>
+        </div>
+    </div>
+
     <div class="container">
-        <div style="text-align: center; margin-bottom: 20px;">
-            <i class="fas fa-shield-alt" style="font-size: 40px; color: #4361ee;"></i>
-            <h1>Security Portal</h1>
-            <p style="color: #64748b; font-size: 14px;"><?php echo $property['name']; ?></p>
+        <div class="card">
+            <h1><i class="fas fa-user-plus"></i> New Visitor Entry</h1>
+            <form method="POST" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label class="required">Full Name</label>
+                    <input type="text" name="v_name" class="form-control" required placeholder="John Doe">
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                    <div class="form-group">
+                        <label class="required">ID Number</label>
+                        <input type="text" name="v_id_number" class="form-control" required placeholder="12345678">
+                    </div>
+                    <div class="form-group">
+                        <label class="required">Phone Number</label>
+                        <input type="tel" name="v_phone" class="form-control" required placeholder="0712345678">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>ID Photo (Upload/Capture)</label>
+                    <input type="file" name="id_image" class="form-control" accept="image/*" capture="environment">
+                </div>
+
+                <div class="form-group">
+                    <label>Vehicle Plate (Optional)</label>
+                    <input type="text" name="v_plate" class="form-control" placeholder="KAA 001A">
+                </div>
+                <div class="form-group">
+                    <label class="required">Visiting Unit</label>
+                    <select name="unit_id" class="form-control" required>
+                        <option value="">-- Select House --</option>
+                        <?php foreach ($units as $u): ?>
+                            <option value="<?php echo $u['unit_id']; ?>">
+                                <?php echo htmlspecialchars($u['unit_number']); ?> 
+                                <?php echo $u['tenant_name'] ? '(' . htmlspecialchars($u['tenant_name']) . ')' : '(Vacant)'; ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <button type="submit" name="log_visitor" class="btn">Confirm Entry</button>
+            </form>
         </div>
 
-        <?php if (isset($success)): ?>
-            <div class="alert alert-success"><?php echo $success; ?></div>
-        <?php endif; ?>
-
-        <form method="POST">
-            <div class="form-group">
-                <label class="required">Visitor Name</label>
-                <input type="text" name="v_name" class="form-control" required placeholder="Full Name">
+        <div style="margin-top:40px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="font-size:18px; margin:0;"><i class="fas fa-clock"></i> Active Visitors</h2>
+                <div class="search-box" style="position:relative;">
+                    <i class="fas fa-search" style="position:absolute; left:10px; top:12px; color:#94a3b8; font-size:12px;"></i>
+                    <input type="text" id="visitorSearch" class="form-control" placeholder="Search..." style="padding-left:30px; padding-top:8px; padding-bottom:8px; font-size:12px;">
+                </div>
             </div>
-            <div class="form-group">
-                <label class="required">ID Number</label>
-                <input type="text" name="v_id_number" class="form-control" placeholder="ID Card Number">
-                <small style="color: #94a3b8; font-size: 11px; display: block; margin-top: 2px;">Used for person verification</small>
-            </div>
-            <div class="form-group">
-                <label class="required">Visitor Phone</label>
-                <input type="tel" name="v_phone" class="form-control" required placeholder="07...">
-            </div>
-            <div class="form-group">
-                <label>Vehicle Plate (Optional)</label>
-                <input type="text" name="v_plate" class="form-control" placeholder="KAA 001A">
-            </div>
-            <div class="form-group">
-                <label>Visiting (House Number)</label>
-                <select name="unit_id" class="form-control" required>
-                    <option value="">Select House</option>
-                    <?php foreach ($tenants as $t): ?>
-                        <option value="<?php echo $t['unit_id']; ?>"><?php echo $t['unit_number']; ?> - <?php echo $t['name']; ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <button type="submit" name="log_visitor" class="btn">Log Entry</button>
-        </form>
-
-        <div class="tenant-match">
-            <strong><i class="fas fa-info-circle"></i> Security Reminder:</strong>
-            <p>Ensure all contractors and visitors are logged. Verify ID numbers visually for security compliance.</p>
-        </div>
-
-        <div class="active-visitors">
-            <h2 style="font-size: 16px; margin-bottom: 15px;"><i class="fas fa-sign-out-alt"></i> Active Visitors</h2>
-            <div class="search-box">
-                <i class="fas fa-search"></i>
-                <input type="text" id="visitorSearch" class="form-control" placeholder="Search by name or house...">
-            </div>
+            
             <div id="activeList">
                 <?php foreach ($active_visitors as $v): ?>
                     <div class="visitor-item" data-search="<?php echo strtolower($v['name'] . ' ' . $v['unit_number']); ?>">
-                        <div class="visitor-info">
-                            <h4><?php echo htmlspecialchars($v['name']); ?></h4>
-                            <p>Visits: <strong><?php echo htmlspecialchars($v['unit_number']); ?></strong> • In: <?php echo date('H:i', strtotime($v['time_in'])); ?></p>
+                        <div>
+                            <h4 style="margin:0; font-size:15px;"><?php echo htmlspecialchars($v['name']); ?></h4>
+                            <div style="display:flex; gap:10px; margin-top:5px;">
+                                <span class="badge badge-info">Unit <?php echo htmlspecialchars($v['unit_number']); ?></span>
+                                <span style="font-size:12px; color:#94a3b8;"><i class="far fa-clock"></i> <?php echo date('H:i', strtotime($v['time_in'])); ?></span>
+                            </div>
                         </div>
                         <form method="POST">
                             <input type="hidden" name="visitor_id" value="<?php echo $v['id']; ?>">
@@ -186,7 +213,7 @@ $tenants = $stmt->fetchAll();
                     </div>
                 <?php endforeach; ?>
                 <?php if (empty($active_visitors)): ?>
-                    <p style="text-align: center; color: #94a3b8; font-size: 13px; padding: 20px;">No active visitors at the moment.</p>
+                    <p style="text-align: center; color: #94a3b8; font-size: 13px; padding: 20px; background:white; border-radius:15px; border:1px dashed #cbd5e1;">No visitors currently in the property.</p>
                 <?php endif; ?>
             </div>
         </div>

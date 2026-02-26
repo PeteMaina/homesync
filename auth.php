@@ -105,13 +105,19 @@ function handleLogin() {
     }
     
     try {
-        $stmt = $pdo->prepare("SELECT id, username, email, password FROM landlords WHERE email = ?");
+        $stmt = $pdo->prepare("SELECT id, username, email, password, status FROM landlords WHERE email = ?");
         $stmt->execute([$email]);
         $admin = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$admin || !password_verify($password, $admin['password'])) {
             http_response_code(401);
             echo json_encode(['error' => 'Invalid email or password']);
+            return;
+        }
+
+        if ($admin['status'] === 'banned') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Your account has been banned. Please contact support.']);
             return;
         }
         

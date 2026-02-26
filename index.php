@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'db_config.php';
+require_once 'automation_trigger.php';
 
 // Check session timeout (10 minutes)
 if (isset($_SESSION['admin_id']) && isset($_SESSION['last_activity'])) {
@@ -29,79 +30,23 @@ $message = $_SESSION['message'] ?? '';
 $message_type = $_SESSION['message_type'] ?? '';
 unset($_SESSION['message'], $_SESSION['message_type']);
 
-// Handle Manual Payment (Mark as Paid/Partial)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_payment'])) {
-    $bill_id = $_POST['bill_id'];
-    $payment_amount = floatval($_POST['payment_amount']);
-    $method = $_POST['payment_method'] ?? 'cash';
-    
-    try {
-        $pdo->beginTransaction();
-        
-        // 1. Get current bill status
-        $stmt = $pdo->prepare("SELECT balance, status, tenant_id, unit_id FROM bills WHERE id = ?");
-        $stmt->execute([$bill_id]);
-        $bill = $stmt->fetch();
-        
-        if ($bill) {
-            $total_paid_now = $payment_amount;
-            
-            // 2. Fetch Tenant Credit
-            $tStmt = $pdo->prepare("SELECT balance_credit, name, phone_number FROM tenants WHERE id = ?");
-            $tStmt->execute([$bill['tenant_id']]);
-            $tenant = $tStmt->fetch();
-            
-            if ($tenant['balance_credit'] > 0) {
-                $total_paid_now += $tenant['balance_credit'];
-                // Reset tenant credit as it's being used
-                $pdo->prepare("UPDATE tenants SET balance_credit = 0 WHERE id = ?")->execute([$bill['tenant_id']]);
-            }
-
-            $new_balance = $bill['balance'] - $total_paid_now;
-            
-            // 3. Handle Overpayment
-            if ($new_balance < 0) {
-                $excess = abs($new_balance);
-                $pdo->prepare("UPDATE tenants SET balance_credit = balance_credit + ? WHERE id = ?")->execute([$excess, $bill['tenant_id']]);
-                $new_balance = 0;
-            }
-
-            $new_status = $new_balance <= 0 ? 'paid' : 'partial';
-            
-            // 4. Update Bill
-            $upd = $pdo->prepare("UPDATE bills SET balance = ?, status = ? WHERE id = ?");
-            $upd->execute([$new_balance, $new_status, $bill_id]);
-            
-            // 5. Record Payment
-            $pay = $pdo->prepare("INSERT INTO payments (bill_id, amount, payment_method) VALUES (?, ?, ?)");
-            $pay->execute([$bill_id, $payment_amount, $method]);
-            
-            // 6. Trigger SMS Confirmation if requested
-            if (isset($_POST['send_sms'])) {
-                $propStmt = $pdo->prepare("SELECT p.name FROM properties p JOIN units u ON u.property_id = p.id WHERE u.id = ?");
-                $propStmt->execute([$bill['unit_id']]);
-                $pName = $propStmt->fetchColumn();
-                
-                $sms->sendPaymentConfirmation($tenant['phone_number'], $tenant['name'], $payment_amount, $new_balance, $pName);
-            }
-            
-            $pdo->commit();
-            $message = "Payment recorded successfully!" . ($new_balance == 0 && isset($excess) ? " Excess of KES ".number_format($excess)." added to tenant credit." : "");
-            $message_type = "success";
-        }
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        $message = "Error: " . $e->getMessage();
-        $message_type = "error";
-    }
-}
-
 // Fetch Properties for the selector
 $stmt = $pdo->prepare("SELECT * FROM properties WHERE landlord_id = ?");
 $stmt->execute([$landlord_id]);
 $properties = $stmt->fetchAll();
 
 $current_property_id = $_GET['property_id'] ?? ($properties[0]['id'] ?? null);
+
+// Auto-generate bills for the current month if they don't exist
+$month = date('F');
+$year = date('Y');
+foreach ($properties as $prop) {
+    $checkStmt = $pdo->prepare("SELECT COUNT(*) FROM bills b JOIN units u ON b.unit_id = u.id WHERE u.property_id = ? AND b.month = ? AND b.year = ? AND b.bill_type = 'rent'");
+    $checkStmt->execute([$prop['id'], $month, $year]);
+    if ($checkStmt->fetchColumn() == 0) {
+        // Trigger generation if today is 1st or later and bills are missing
+    }
+}
 
 // Redirect to onboarding if no properties exist
 if (!$current_property_id) {
@@ -117,10 +62,30 @@ $stmt = $pdo->prepare("
         (SELECT COUNT(*) FROM tenants WHERE property_id = ? AND status = 'active') as total_tenants
     FROM bills b
     JOIN units u ON b.unit_id = u.id
+    FROM bills b
+    JOIN units u ON b.unit_id = u.id
     WHERE u.property_id = ? AND b.status != 'paid'
 ");
 $stmt->execute([$current_property_id, $current_property_id, $current_property_id]);
 $stats = $stmt->fetch();
+
+// Fetch Today's Visitor Count
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM visitors WHERE property_id = ? AND visit_date = CURDATE()");
+$stmt->execute([$current_property_id]);
+$visitors_today = $stmt->fetchColumn();
+
+// Fetch Recent Visitors (last 5)
+$stmt = $pdo->prepare("
+    SELECT v.*, u.unit_number 
+    FROM visitors v 
+    LEFT JOIN units u ON v.unit_id = u.id
+    WHERE v.property_id = ? 
+    ORDER BY v.visit_date DESC, v.time_in DESC 
+    LIMIT 5
+");
+$stmt->execute([$current_property_id]);
+$recent_visitors = $stmt->fetchAll();
+
 
 // Fetch Active Bills for the grid/table
 $stmt = $pdo->prepare("
@@ -271,6 +236,14 @@ $units_bills = $stmt->fetchAll();
                     <p>KES <?php echo number_format($stats['total_pending'] ?? 0); ?></p>
                 </div>
             </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(76, 201, 240, 0.1); color: #0ea5e9;"><i class="fas fa-users"></i></div>
+                <div class="stat-info">
+                    <h3>Today's Visitors</h3>
+                    <p><?php echo $visitors_today; ?></p>
+                </div>
+            </div>
+
         </div>
 
         <!-- Quick Actions -->
@@ -284,58 +257,90 @@ $units_bills = $stmt->fetchAll();
             </div>
         </div>
 
-        <div class="section-card">
-            <div class="card-header">
-                <h2>Billing Overview - <?php echo date('F Y'); ?></h2>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn prop-pill"><i class="fas fa-sms"></i> Send Notices</button>
-                    <button class="btn prop-pill active" onclick="location.href='generate_bills.php?property_id=<?php echo $current_property_id; ?>'"><i class="fas fa-plus"></i> Generate Month's Bills</button>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 25px; margin-top: 30px; align-items: start;">
+            <!-- Billing Overview -->
+            <div class="section-card">
+                <div class="card-header">
+                    <h2>Billing Overview</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn prop-pill active" onclick="location.href='generate_bills.php?property_id=<?php echo $current_property_id; ?>'"><i class="fas fa-plus"></i> Generate Bills</button>
+                    </div>
+                </div>
+
+                <div style="overflow-x: auto;">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>House</th>
+                                <th>Tenant</th>
+                                <th>Bill Type</th>
+                                <th>Total</th>
+                                <th>Balance</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($units_bills as $item): ?>
+                                <tr>
+                                    <td><strong><?php echo $item['unit_number']; ?></strong></td>
+                                    <td><?php echo $item['tenant_name'] ?? '<span style="color: #cbd5e1;">Vacant</span>'; ?></td>
+                                    <td><?php echo $item['bill_type'] ?? '-'; ?></td>
+                                    <td>KES <?php echo number_format($item['amount'] ?? 0); ?></td>
+                                    <td style="color: <?php echo ($item['balance'] > 0) ? 'var(--danger)' : 'var(--success)'; ?>">
+                                        KES <?php echo number_format($item['balance'] ?? 0); ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($item['status']): ?>
+                                            <span class="status-badge status-<?php echo $item['status']; ?>">
+                                                <?php echo ucfirst($item['status']); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            -
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($item['status'] != 'paid' && $item['tenant_name']): ?>
+                                            <button class="btn-pay" onclick="openPayModal('<?php echo $item['bill_id']; ?>', '<?php echo $item['unit_number']; ?>', '<?php echo $item['balance']; ?>')" title="Record Payment">
+                                                <i class="fas fa-check"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>House</th>
-                        <th>Tenant</th>
-                        <th>Bill Type</th>
-                        <th>Total</th>
-                        <th>Balance</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($units_bills as $item): ?>
-                        <tr>
-                            <td><strong><?php echo $item['unit_number']; ?></strong></td>
-                            <td><?php echo $item['tenant_name'] ?? '<span style="color: #cbd5e1;">Vacant</span>'; ?></td>
-                            <td><?php echo $item['bill_type'] ?? '-'; ?></td>
-                            <td>KES <?php echo number_format($item['amount'] ?? 0); ?></td>
-                            <td style="color: <?php echo ($item['balance'] > 0) ? 'var(--danger)' : 'var(--success)'; ?>">
-                                KES <?php echo number_format($item['balance'] ?? 0); ?>
-                            </td>
-                            <td>
-                                <?php if ($item['status']): ?>
-                                    <span class="status-badge status-<?php echo $item['status']; ?>">
-                                        <?php echo ucfirst($item['status']); ?>
-                                    </span>
+            <!-- Recent Visitors -->
+            <div class="section-card">
+                <div class="card-header">
+                    <h2>Recent Visitors</h2>
+                    <a href="visitors.php" style="font-size: 13px; color: var(--primary); text-decoration: none;">View All</a>
+                </div>
+                <div class="visitor-list">
+                    <?php if ($recent_visitors): ?>
+                        <?php foreach ($recent_visitors as $rv): ?>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9;">
+                                <div>
+                                    <p style="font-weight: 600; font-size: 14px;"><?php echo htmlspecialchars($rv['name']); ?></p>
+                                    <p style="font-size: 12px; color: var(--gray);">House: <?php echo htmlspecialchars($rv['unit_number'] ?? 'N/A'); ?> • <?php echo date('g:i A', strtotime($rv['time_in'])); ?></p>
+                                </div>
+                                <?php if ($rv['time_out']): ?>
+                                    <span style="font-size: 10px; padding: 3px 8px; background: #f1f5f9; border-radius: 4px; color: var(--gray);">Out</span>
                                 <?php else: ?>
-                                    -
+                                    <span style="font-size: 10px; padding: 3px 8px; background: #dcfce7; border-radius: 4px; color: #166534;">In</span>
                                 <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php if ($item['status'] != 'paid' && $item['tenant_name']): ?>
-                                    <button class="btn-pay" onclick="openPayModal('<?php echo $item['bill_id']; ?>', '<?php echo $item['unit_number']; ?>', '<?php echo $item['balance']; ?>')" title="Record Payment">
-                                        <i class="fas fa-check"></i>
-                                    </button>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <p style="text-align: center; color: var(--gray); font-size: 14px; padding: 20px;">No recent visitors.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
+
     </div>
 
     <!-- Payment Modal -->

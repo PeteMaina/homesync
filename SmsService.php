@@ -65,6 +65,7 @@ class SmsService {
      */
     public function sendInvoice($phone, $name, $amount, $dueDate, $propertyName) {
         $msg = "Hello $name, your rent for $propertyName is KES " . number_format($amount) . ". Due date: $dueDate. Please pay via M-Pesa or Bank. Thank you.";
+        $this->shortCode = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $propertyName), 0, 11));
         return $this->sendSms($phone, $msg);
     }
 
@@ -81,6 +82,7 @@ class SmsService {
         if ($data['credit'] > 0) $msg .= "Prev Credit: -" . number_format($data['credit']) . "\n";
         $msg .= "TOTAL DUE: KES " . number_format($data['total']) . ". Pay by 5th. Thank you.";
         
+        $this->shortCode = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $data['property']), 0, 11));
         return $this->sendSms($phone, $msg);
     }
 
@@ -89,18 +91,51 @@ class SmsService {
      */
     public function sendPaymentConfirmation($phone, $name, $amount, $balance, $propertyName) {
         $msg = "Hello $name, we have received KES " . number_format($amount) . " for your house at $propertyName. Your current balance is KES " . number_format($balance) . ". Thank you.";
+        $this->shortCode = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $propertyName), 0, 11));
         return $this->sendSms($phone, $msg);
     }
 
     /**
      * Specialized: Send Bulk Notice
      */
-    public function sendBulkNotice($phones, $message) {
-        $results = [];
-        foreach ($phones as $phone) {
-            $results[] = $this->sendSms($phone, $message);
+    /**
+     * Send monthly bill summaries to all tenants for a property
+     */
+    public function sendMonthlyBills($pdo, $property_id, $month, $year) {
+        // Fetch property name
+        $stmt = $pdo->prepare("SELECT name FROM properties WHERE id = ?");
+        $stmt->execute([$property_id]);
+        $propertyName = $stmt->fetchColumn();
+
+        // Fetch all active tenants for this property and their summed bills
+        $stmt = $pdo->prepare("
+            SELECT t.id, t.name, t.phone_number, SUM(b.balance) as total_due
+            FROM tenants t
+            JOIN bills b ON t.id = b.tenant_id
+            WHERE t.property_id = ? AND t.status = 'active' 
+            AND b.month = ? AND b.year = ?
+            GROUP BY t.id
+        ");
+        $stmt->execute([$property_id, $month, $year]);
+        $tenants = $stmt->fetchAll();
+
+        foreach ($tenants as $tenant) {
+            // Fetch breakdown for the SMS
+            $bStmt = $pdo->prepare("SELECT bill_type, amount FROM bills WHERE tenant_id = ? AND month = ? AND year = ?");
+            $bStmt->execute([$tenant['id'], $month, $year]);
+            $bills = $bStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+            $msg = "Hello {$tenant['name']}, your total bill for $propertyName ($month) is KES " . number_format($tenant['total_due']) . ". ";
+            if (isset($bills['rent'])) $msg .= "Rent: " . number_format($bills['rent']) . ", ";
+            if (isset($bills['water'])) $msg .= "Water: " . number_format($bills['water']) . ", ";
+            if (isset($bills['wifi'])) $msg .= "WiFi: " . number_format($bills['wifi']) . ", ";
+            if (isset($bills['garbage'])) $msg .= "Garbage: " . number_format($bills['garbage']) . ". ";
+            $msg .= "Please pay by the 5th. Thank you.";
+
+            $this->shortCode = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $propertyName), 0, 11));
+            $this->sendSms($tenant['phone_number'], $msg);
         }
-        return $results;
+        return true;
     }
 
     private function formatPhoneNumber($phone) {
