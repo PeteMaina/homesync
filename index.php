@@ -62,8 +62,6 @@ $stmt = $pdo->prepare("
         (SELECT COUNT(*) FROM tenants WHERE property_id = ? AND status = 'active') as total_tenants
     FROM bills b
     JOIN units u ON b.unit_id = u.id
-    FROM bills b
-    JOIN units u ON b.unit_id = u.id
     WHERE u.property_id = ? AND b.status != 'paid'
 ");
 $stmt->execute([$current_property_id, $current_property_id, $current_property_id]);
