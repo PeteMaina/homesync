@@ -79,6 +79,19 @@ if ($day == 1) {
                             }
                         }
 
+                        // Water Placeholder (Initial entry for reading)
+                        $check = $pdo->prepare("SELECT id FROM bills WHERE unit_id = ? AND month = ? AND year = ? AND bill_type = 'water'");
+                        $check->execute([$unit['id'], $month, $year]);
+                        if (!$check->fetch()) {
+                            // Fetch previous reading for placeholder
+                            $prevStmt = $pdo->prepare("SELECT reading_curr FROM bills WHERE unit_id = ? AND bill_type = 'water' ORDER BY id DESC LIMIT 1");
+                            $prevStmt->execute([$unit['id']]);
+                            $prev = $prevStmt->fetchColumn() ?: 0;
+                            
+                            $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, reading_curr, reading_prev, due_date, status) VALUES (?, ?, 'water', 0, 0, ?, ?, ?, ?, ?, 'unpaid')")
+                                ->execute([$t_id, $unit['id'], $month, $year, $prev, $prev, $due_date]);
+                        }
+
                         // Update credit
                         $pdo->prepare("UPDATE tenants SET balance_credit = ? WHERE id = ?")->execute([$credit, $t_id]);
                     }

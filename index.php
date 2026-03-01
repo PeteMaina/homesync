@@ -97,14 +97,14 @@ $stmt = $pdo->prepare("
         b.status, 
         b.month,
         b.bill_type
-    FROM units u
-    LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
-    LEFT JOIN bills b ON b.unit_id = u.id AND b.month = ? AND b.year = ?
-    WHERE u.property_id = ?
+    FROM bills b
+    JOIN units u ON b.unit_id = u.id
+    JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+    WHERE u.property_id = ? AND b.balance > 0 AND b.month = ? AND b.year = ?
     ORDER BY u.unit_number ASC
 ");
 // For simplicity, showing current month/year
-$stmt->execute([date('F'), date('Y'), $current_property_id]);
+$stmt->execute([$current_property_id, date('F'), date('Y')]);
 $units_bills = $stmt->fetchAll();
 
 ?>
@@ -275,7 +275,6 @@ $units_bills = $stmt->fetchAll();
                                 <th>Total</th>
                                 <th>Balance</th>
                                 <th>Status</th>
-                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -295,13 +294,6 @@ $units_bills = $stmt->fetchAll();
                                             </span>
                                         <?php else: ?>
                                             -
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php if ($item['status'] != 'paid' && $item['tenant_name']): ?>
-                                            <button class="btn-pay" onclick="openPayModal('<?php echo $item['bill_id']; ?>', '<?php echo $item['unit_number']; ?>', '<?php echo $item['balance']; ?>')" title="Record Payment">
-                                                <i class="fas fa-check"></i>
-                                            </button>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
@@ -341,62 +333,8 @@ $units_bills = $stmt->fetchAll();
 
     </div>
 
-    <!-- Payment Modal -->
-    <div class="modal" id="payModal">
-        <div class="modal-content">
-            <h2 style="margin-bottom: 20px;">Record Payment</h2>
-            <form method="POST">
-                <input type="hidden" name="bill_id" id="modal_bill_id">
-                <div class="form-group">
-                    <label>House</label>
-                    <input type="text" id="modal_unit" class="form-control" readOnly>
-                </div>
-                <div class="form-group">
-                    <label>Balance Due</label>
-                    <input type="text" id="modal_balance" class="form-control" readOnly>
-                </div>
-                <div class="form-group">
-                    <label>Amount Paid (KES)</label>
-                    <input type="number" name="payment_amount" id="modal_pay_amount" class="form-control" required step="0.01">
-                </div>
-                <div class="form-group">
-                    <label>Payment Method</label>
-                    <select name="payment_method" class="form-control">
-                        <option value="cash">Cash</option>
-                        <option value="bank">Bank Transfer</option>
-                        <option value="mpesa">M-Pesa (Manual)</option>
-                    </select>
-                </div>
-                <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" name="send_sms" id="modal_sms" value="1" checked>
-                    <label for="modal_sms" style="margin-bottom: 0;">Send SMS Confirmation</label>
-                </div>
-                <div style="display: flex; gap: 10px; margin-top: 30px;">
-                    <button type="button" class="btn prop-pill" style="flex: 1;" onclick="closePayModal()">Cancel</button>
-                    <button type="submit" name="update_payment" class="btn prop-pill active" style="flex: 1;">Save Payment</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <script>
-        function openPayModal(id, unit, balance) {
-            document.getElementById('modal_bill_id').value = id;
-            document.getElementById('modal_unit').value = unit;
-            document.getElementById('modal_balance').value = 'KES ' + Number(balance).toLocaleString();
-            document.getElementById('modal_pay_amount').value = balance;
-            document.getElementById('payModal').style.display = 'flex';
-        }
-
-        function closePayModal() {
-            document.getElementById('payModal').style.display = 'none';
-        }
-
-        window.onclick = function(event) {
-            if (event.target == document.getElementById('payModal')) {
-                closePayModal();
-            }
-        }
+        // No modals anymore
     </script>
 </body>
 </html>

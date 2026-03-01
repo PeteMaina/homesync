@@ -45,8 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['log_visitor'])) {
     $stmt->execute([$unit_id]);
     $data = $stmt->fetch();
     
-    $stmt = $pdo->prepare("INSERT INTO visitors (property_id, tenant_id, unit_id, name, id_number, phone_number, number_plate, id_image, visit_date, time_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())");
-    $stmt->execute([$property['id'], $data['tenant_id'] ?? null, $unit_id, $name, $id_number, $phone, $plate, $id_image]);
+    $v_type = $_POST['v_type'] ?? 'guest';
+    $v_purpose = $_POST['v_purpose'] ?? '';
+    
+    $stmt = $pdo->prepare("INSERT INTO visitors (property_id, tenant_id, unit_id, name, id_number, phone_number, number_plate, id_image, visitor_type, purpose, visit_date, time_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())");
+    $stmt->execute([$property['id'], $data['tenant_id'] ?? null, $unit_id, $name, $id_number, $phone, $plate, $id_image, $v_type, $v_purpose]);
 
 
     
@@ -138,7 +141,9 @@ $units = $stmt->fetchAll();
         </div>
         <div style="text-align:right;">
             <span style="font-size:12px; opacity:0.7;">Logging in as: <strong>Gate Officer</strong></span><br>
-            <a href="logout.php" style="color:#fca5a5; font-size:12px; text-decoration:none; font-weight:600;">Sign Out</a>
+            <form action="logout.php" method="POST" style="display:inline;">
+                <button type="submit" style="background:none; border:none; color:#fca5a5; font-size:12px; text-decoration:none; font-weight:600; cursor:pointer; padding:0;">Sign Out</button>
+            </form>
         </div>
     </div>
 
@@ -166,9 +171,23 @@ $units = $stmt->fetchAll();
                     <input type="file" name="id_image" class="form-control" accept="image/*" capture="environment">
                 </div>
 
-                <div class="form-group">
-                    <label>Vehicle Plate (Optional)</label>
-                    <input type="text" name="v_plate" class="form-control" placeholder="KAA 001A">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                    <div class="form-group">
+                        <label>Vehicle Plate (Optional)</label>
+                        <input type="text" name="v_plate" class="form-control" placeholder="KAA 001A">
+                    </div>
+                    <div class="form-group">
+                        <label class="required">Visitor Type</label>
+                        <select name="v_type" id="v_type" class="form-control" onchange="toggleContractorField()">
+                            <option value="guest">Guest</option>
+                            <option value="contractor">Contractor</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group" id="contractor_div" style="display:none;">
+                    <label>Contractor/Company Name & Purpose</label>
+                    <input type="text" name="v_purpose" class="form-control" placeholder="e.g. Acme Plumbing - Leak fix">
                 </div>
                 <div class="form-group">
                     <label class="required">Visiting Unit</label>
@@ -208,7 +227,7 @@ $units = $stmt->fetchAll();
                         </div>
                         <form method="POST">
                             <input type="hidden" name="visitor_id" value="<?php echo $v['id']; ?>">
-                            <button type="submit" name="logout_visitor" class="btn-logout">Logout</button>
+                            <button type="submit" name="logout_visitor" class="btn-logout">Check Out</button>
                         </form>
                     </div>
                 <?php endforeach; ?>
@@ -220,6 +239,12 @@ $units = $stmt->fetchAll();
     </div>
 
     <script>
+        function toggleContractorField() {
+            const type = document.getElementById('v_type').value;
+            const div = document.getElementById('contractor_div');
+            div.style.display = (type === 'contractor') ? 'block' : 'none';
+        }
+
         document.getElementById('visitorSearch').addEventListener('input', function(e) {
             const term = e.target.value.toLowerCase();
             document.querySelectorAll('.visitor-item').forEach(item => {

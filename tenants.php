@@ -189,9 +189,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
     }
     
     try {
-        // Check if tenant already exists
-        $stmt = $pdo->prepare("SELECT id FROM tenants WHERE id_number = ?");
-        $stmt->execute([$id_number]);
+        // Check if an ACTIVE tenant with this ID already exists under this landlord
+        $stmt = $pdo->prepare("
+            SELECT t.id FROM tenants t 
+            JOIN properties p ON t.property_id = p.id 
+            WHERE t.id_number = ? AND t.status = 'active' AND p.landlord_id = ?
+        ");
+        $stmt->execute([$id_number, $_SESSION['admin_id']]);
         if ($stmt->fetch()) {
             $error = "A tenant with this ID number already exists.";
         } else {

@@ -680,9 +680,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                     <tr>
                                         <td>
                                             <div class="visitor-details">
-                                                <div class="visitor-name"><?php echo htmlspecialchars($visitor['name']); ?></div>
+                                                <div class="visitor-name">
+                                                    <?php echo htmlspecialchars($visitor['name']); ?>
+                                                    <?php if ($visitor['visitor_type'] === 'contractor'): ?>
+                                                        <span class="badge" style="font-size: 10px; background: #fee2e2; color: #ef4444; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">Contractor</span>
+                                                    <?php endif; ?>
+                                                </div>
                                                 <div><?php echo htmlspecialchars($visitor['phone_number']); ?></div>
                                                 <div>ID: <?php echo htmlspecialchars($visitor['id_number']); ?></div>
+                                                <?php if (!empty($visitor['purpose'])): ?>
+                                                    <div style="font-style: italic; font-size: 12px; color: var(--primary);"><i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($visitor['purpose']); ?></div>
+                                                <?php endif; ?>
                                             </div>
                                         </td>
                                         <td>

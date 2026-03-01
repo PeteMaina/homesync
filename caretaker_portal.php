@@ -46,7 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_reading'])) {
         $existing_bill_id = $stmt->fetchColumn();
 
         $units_consumed = max(0, $reading - $prev_reading);
-        $rate = $property['water_rate'] ?: 100; // Default rate
+        // Get water rate from the unit, not the property
+        $rateStmt = $pdo->prepare("SELECT water_rate FROM units WHERE id = ?");
+        $rateStmt->execute([$unit_id]);
+        $rate = $rateStmt->fetchColumn() ?: 100; // Default rate
         $amount = $units_consumed * $rate;
 
         if ($existing_bill_id) {
@@ -114,7 +117,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_reading'])) {
         </div>
         <div style="text-align:right;">
             <span style="font-size:12px; opacity:0.7;">Logged in as: <strong><?php echo htmlspecialchars($caretaker_name); ?></strong></span><br>
-            <a href="logout.php" style="color:#fca5a5; font-size:12px; text-decoration:none; font-weight:600;">Sign Out</a>
+            <form action="logout.php" method="POST" style="display:inline;">
+                <button type="submit" style="background:none; border:none; color:#fca5a5; font-size:12px; text-decoration:none; font-weight:600; cursor:pointer; padding:0;">Sign Out</button>
+            </form>
         </div>
     </div>
 

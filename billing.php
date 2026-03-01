@@ -49,16 +49,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_readings'])) {
             $bill = $check->fetch();
             
             if ($bill) {
-                $upd = $pdo->prepare("UPDATE bills SET reading_curr = ?, reading_prev = ? WHERE id = ?");
-                $upd->execute([$curr, $prev, $bill['id']]);
+                // Fetch water rate for calculation
+                $rateStmt = $pdo->prepare("SELECT water_rate FROM units WHERE id = ?");
+                $rateStmt->execute([$unit_id]);
+                $rate = $rateStmt->fetchColumn() ?: 0;
+                
+                $units_used = max(0, $curr - $prev);
+                $amount = $units_used * $rate;
+                
+                $upd = $pdo->prepare("UPDATE bills SET reading_curr = ?, reading_prev = ?, amount = ?, balance = ? WHERE id = ?");
+                $upd->execute([$curr, $prev, $amount, $amount, $bill['id']]);
             } else {
                 // Get tenant
                 $tStmt = $pdo->prepare("SELECT id FROM tenants WHERE unit_id = ? AND status = 'active'");
                 $tStmt->execute([$unit_id]);
                 $tid = $tStmt->fetchColumn();
                 
-                $ins = $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, reading_curr, reading_prev, due_date, status) VALUES (?, ?, 'water', 0, 0, ?, ?, ?, ?, ?, 'unpaid')");
-                $ins->execute([$tid, $unit_id, $month, $year, $curr, $prev, date('Y-m-d', strtotime('5th next month')), 'unpaid']);
+                if ($tid) {
+                    // Fetch water rate for calculation
+                    $rateStmt = $pdo->prepare("SELECT water_rate FROM units WHERE id = ?");
+                    $rateStmt->execute([$unit_id]);
+                    $rate = $rateStmt->fetchColumn() ?: 0;
+                    
+                    $units_used = max(0, $curr - $prev);
+                    $amount = $units_used * $rate;
+                    
+                    $ins = $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, reading_curr, reading_prev, due_date, status) VALUES (?, ?, 'water', ?, ?, ?, ?, ?, ?, ?, 'unpaid')");
+                    $ins->execute([
+                        $tid, 
+                        $unit_id, 
+                        $amount, 
+                        $amount, 
+                        $month, 
+                        $year, 
+                        $curr, 
+                        $prev, 
+                        date('Y-m-d', strtotime('5th next month'))
+                    ]);
+                }
             }
         }
         $pdo->commit();
@@ -123,69 +151,120 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_invoice'])) {
     exit();
 }
 
-// Handle Manual Bill Adjustment
+// Handle Manual Bill Adjustment (distributed across tenant's bills for a month)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['apply_adjustment'])) {
-    $bill_id = $_POST['adjust_bill_id'];
+    $tenant_id = intval($_POST['adjust_tenant_id']);
+    $adj_month = $_POST['adjust_month'];
+    $adj_year = $_POST['adjust_year'];
     $adjustment_type = $_POST['adjustment_type'];
     $amount = floatval($_POST['adjustment_amount']);
     $payment_method = $_POST['payment_method'] ?? null;
     $notes = $_POST['adjustment_notes'] ?? '';
+    $property_id_redirect = $_POST['redirect_property_id'] ?? '';
 
     try {
         $pdo->beginTransaction();
 
-        // Get current bill details
-        $billStmt = $pdo->prepare("SELECT * FROM bills WHERE id = ?");
-        $billStmt->execute([$bill_id]);
-        $bill = $billStmt->fetch();
-
-        if (!$bill) {
-            throw new Exception("Bill not found.");
-        }
-
-        $new_balance = $bill['balance'];
-
         if ($adjustment_type === 'payment') {
-            // Payment received - reduce balance
-            $new_balance = max(0, $bill['balance'] - $amount);
+            // === DISTRIBUTED PAYMENT LOGIC ===
+            // Fetch ALL unpaid/partial bills for this tenant in this month, ordered by type priority
+            $billsStmt = $pdo->prepare("
+                SELECT id, bill_type, amount, balance 
+                FROM bills 
+                WHERE tenant_id = ? AND month = ? AND year = ? AND status != 'paid'
+                ORDER BY FIELD(bill_type, 'rent', 'water', 'wifi', 'garbage', 'penalty', 'other')
+            ");
+            $billsStmt->execute([$tenant_id, $adj_month, $adj_year]);
+            $pending_bills = $billsStmt->fetchAll();
 
-            // Record payment
-            $payStmt = $pdo->prepare("INSERT INTO payments (bill_id, amount, payment_method, transaction_reference, payment_date) VALUES (?, ?, ?, ?, NOW())");
-            $payStmt->execute([$bill_id, $amount, $payment_method, $notes]);
+            $remaining_payment = $amount;
 
-            // If overpayment, add to tenant credit
-            if ($bill['balance'] < $amount) {
-                $overpayment = $amount - $bill['balance'];
-                $creditStmt = $pdo->prepare("UPDATE tenants SET balance_credit = balance_credit + ? WHERE id = ?");
-                $creditStmt->execute([$overpayment, $bill['tenant_id']]);
+            // Record the overall payment (link to first bill for reference)
+            if (!empty($pending_bills)) {
+                $payStmt = $pdo->prepare("INSERT INTO payments (bill_id, amount, payment_method, transaction_reference, payment_date) VALUES (?, ?, ?, ?, NOW())");
+                $payStmt->execute([$pending_bills[0]['id'], $amount, $payment_method, $notes]);
             }
-        } elseif ($adjustment_type === 'credit') {
-            // Add credit - reduce balance
-            $new_balance = max(0, $bill['balance'] - $amount);
-        } elseif ($adjustment_type === 'penalty') {
-            // Add penalty - increase balance
-            $new_balance = $bill['balance'] + $amount;
-        } elseif ($adjustment_type === 'discount') {
-            // Apply discount - reduce balance
-            $new_balance = max(0, $bill['balance'] - $amount);
-        }
 
-        // Update bill balance and status
-        $new_status = $new_balance <= 0 ? 'paid' : ($new_balance < $bill['amount'] ? 'partial' : 'unpaid');
-        $updateStmt = $pdo->prepare("UPDATE bills SET balance = ?, status = ? WHERE id = ?");
-        $updateStmt->execute([$new_balance, $new_status, $bill_id]);
+            // Distribute payment across bills sequentially
+            foreach ($pending_bills as $bill) {
+                if ($remaining_payment <= 0) break;
+
+                if ($remaining_payment >= $bill['balance']) {
+                    // Payment covers this bill fully
+                    $remaining_payment -= $bill['balance'];
+                    $pdo->prepare("UPDATE bills SET balance = 0, status = 'paid' WHERE id = ?")->execute([$bill['id']]);
+                } else {
+                    // Payment only partially covers this bill
+                    $new_bal = $bill['balance'] - $remaining_payment;
+                    $remaining_payment = 0;
+                    $pdo->prepare("UPDATE bills SET balance = ?, status = 'partial' WHERE id = ?")->execute([$new_bal, $bill['id']]);
+                }
+            }
+
+            // If there's still money left over after clearing all bills → tenant credit
+            if ($remaining_payment > 0) {
+                $pdo->prepare("UPDATE tenants SET balance_credit = balance_credit + ? WHERE id = ?")->execute([$remaining_payment, $tenant_id]);
+            }
+
+            // Send SMS Confirmation
+            $tStmt = $pdo->prepare("SELECT name, phone_number, property_id FROM tenants WHERE id = ?");
+            $tStmt->execute([$tenant_id]);
+            $tenant = $tStmt->fetch();
+
+            $pStmt = $pdo->prepare("SELECT name FROM properties WHERE id = ?");
+            $pStmt->execute([$tenant['property_id']]);
+            $propName = $pStmt->fetchColumn();
+
+            // Total remaining balance across ALL months for this tenant
+            $balStmt = $pdo->prepare("SELECT COALESCE(SUM(balance), 0) FROM bills WHERE tenant_id = ? AND status != 'paid'");
+            $balStmt->execute([$tenant_id]);
+            $total_remaining = $balStmt->fetchColumn();
+
+            $credStmt = $pdo->prepare("SELECT balance_credit FROM tenants WHERE id = ?");
+            $credStmt->execute([$tenant_id]);
+            $credit = $credStmt->fetchColumn() ?: 0;
+
+            $net_balance = $total_remaining - $credit;
+
+            $sms->sendPaymentConfirmation($tenant['phone_number'], $tenant['name'], $amount, $net_balance, $propName);
+
+        } elseif ($adjustment_type === 'penalty') {
+            // Add penalty as a new bill entry
+            $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, due_date, status) 
+                SELECT ?, unit_id, 'penalty', ?, ?, ?, ?, DATE_ADD(CURDATE(), INTERVAL 5 DAY), 'unpaid' 
+                FROM tenants WHERE id = ?")
+                ->execute([$tenant_id, $amount, $amount, $adj_month, $adj_year, $tenant_id]);
+
+        } elseif ($adjustment_type === 'discount' || $adjustment_type === 'credit') {
+            // Distribute discount/credit across unpaid bills
+            $billsStmt = $pdo->prepare("SELECT id, balance FROM bills WHERE tenant_id = ? AND month = ? AND year = ? AND status != 'paid' ORDER BY balance ASC");
+            $billsStmt->execute([$tenant_id, $adj_month, $adj_year]);
+            $pending = $billsStmt->fetchAll();
+            $remaining = $amount;
+            foreach ($pending as $bill) {
+                if ($remaining <= 0) break;
+                if ($remaining >= $bill['balance']) {
+                    $remaining -= $bill['balance'];
+                    $pdo->prepare("UPDATE bills SET balance = 0, status = 'paid' WHERE id = ?")->execute([$bill['id']]);
+                } else {
+                    $new_bal = $bill['balance'] - $remaining;
+                    $remaining = 0;
+                    $pdo->prepare("UPDATE bills SET balance = ?, status = 'partial' WHERE id = ?")->execute([$new_bal, $bill['id']]);
+                }
+            }
+        }
 
         $pdo->commit();
-        $_SESSION['message'] = "Bill adjustment applied successfully!";
+        $_SESSION['message'] = "Adjustment applied successfully!";
         $_SESSION['message_type'] = "success";
 
     } catch (Exception $e) {
         $pdo->rollBack();
-        $_SESSION['message'] = "Error applying adjustment: " . $e->getMessage();
+        $_SESSION['message'] = "Error: " . $e->getMessage();
         $_SESSION['message_type'] = "error";
     }
 
-    header("Location: billing.php?property_id=" . $_GET['property_id']);
+    header("Location: billing.php?property_id=" . $property_id_redirect);
     exit();
 }
 
@@ -200,19 +279,19 @@ $current_property_id = $_GET['property_id'] ?? ($properties[0]['id'] ?? null);
 $bills = [];
 $property_tenants = [];
 if ($current_property_id) {
-    // Bills
+    // Bills — grouped per tenant per month (summed)
     $stmt = $pdo->prepare("
         SELECT 
             b.tenant_id, b.unit_id, b.month, b.year,
-            SUM(b.amount) as amount, 
-            SUM(b.balance) as balance,
-            t.name as tenant_name, u.unit_number,
-            GROUP_CONCAT(DISTINCT b.bill_type) as bill_types
+            SUM(b.amount) as total_amount, 
+            SUM(b.balance) as total_balance,
+            GROUP_CONCAT(DISTINCT b.bill_type ORDER BY FIELD(b.bill_type, 'rent','water','wifi','garbage','penalty','other')) as bill_types,
+            t.name as tenant_name, u.unit_number
         FROM bills b 
         JOIN units u ON b.unit_id = u.id 
         JOIN tenants t ON b.tenant_id = t.id 
         WHERE u.property_id = ? 
-        GROUP BY b.unit_id, b.month, b.year
+        GROUP BY b.tenant_id, b.month, b.year
         ORDER BY b.year DESC, b.month DESC, u.unit_number ASC
     ");
     $stmt->execute([$current_property_id]);
@@ -329,9 +408,9 @@ if ($current_property_id) {
             $total_paid = 0;
             $total_pending = 0;
             foreach ($bills as $b) {
-                $total_billed += $b['amount'];
-                $total_pending += $b['balance'];
-                $total_paid += ($b['amount'] - $b['balance']);
+                $total_billed += $b['total_amount'];
+                $total_pending += $b['total_balance'];
+                $total_paid += ($b['total_amount'] - $b['total_balance']);
             }
             ?>
 
@@ -360,9 +439,9 @@ if ($current_property_id) {
                     <thead>
                         <tr>
                             <th>Tenant / House</th>
-                            <th>Bill Type</th>
+                            <th>Bills</th>
                             <th>Month</th>
-                            <th>Total</th>
+                            <th>Total Billed</th>
                             <th>Balance</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -371,33 +450,41 @@ if ($current_property_id) {
                     <tbody>
                         <?php if (count($bills) > 0): ?>
                             <?php foreach ($bills as $b): ?>
+                                <?php
+                                $status = $b['total_balance'] <= 0 ? 'paid' : ($b['total_balance'] < $b['total_amount'] ? 'partial' : 'unpaid');
+                                ?>
                                 <tr>
                                     <td>
                                         <strong><?php echo htmlspecialchars($b['tenant_name']); ?></strong><br>
-                                        <small><?php echo htmlspecialchars($b['unit_number']); ?></small>
-                                    </td>
-                                    <td>
-                                        <span style="text-transform: capitalize; font-size: 11px; color: var(--gray);">
-                                            <?php echo str_replace(',', ', ', $b['bill_types']); ?>
-                                        </span>
-                                    </td>
-                                    <td><?php echo $b['month'] . ' ' . $b['year']; ?></td>
-                                    <td>KES <?php echo number_format($b['amount']); ?></td>
-                                    <td style="font-weight: 600; color: <?php echo $b['balance'] > 0 ? 'var(--danger)' : 'var(--success)'; ?>">
-                                        KES <?php echo number_format($b['balance']); ?>
+                                        <small style="color: var(--gray);"><?php echo htmlspecialchars($b['unit_number']); ?></small>
                                     </td>
                                     <td>
                                         <?php 
-                                        $status = $b['balance'] <= 0 ? 'paid' : ($b['balance'] < $b['amount'] ? 'partial' : 'unpaid');
-                                        ?>
+                                        $types = explode(',', $b['bill_types']);
+                                        foreach ($types as $type): ?>
+                                            <span style="text-transform: capitalize; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; margin-right: 3px; display: inline-block; margin-bottom: 2px;">
+                                                <?php echo htmlspecialchars(trim($type)); ?>
+                                            </span>
+                                        <?php endforeach; ?>
+                                    </td>
+                                    <td><?php echo $b['month'] . ' ' . $b['year']; ?></td>
+                                    <td>KES <?php echo number_format($b['total_amount']); ?></td>
+                                    <td style="font-weight: 700; color: <?php echo $b['total_balance'] > 0 ? 'var(--danger)' : 'var(--success)'; ?>">
+                                        KES <?php echo number_format($b['total_balance']); ?>
+                                    </td>
+                                    <td>
                                         <span class="status-badge status-<?php echo $status; ?>">
                                             <?php echo ucfirst($status); ?>
                                         </span>
                                     </td>
                                     <td style="display: flex; gap: 5px;">
-                                        <button class="btn btn-primary btn-sm" onclick="alert('Individual bill adjustment coming soon, or use the \'Create Custom Bill\' to add/deduct.')">
-                                            <i class="fas fa-info-circle"></i>
+                                        <?php if ($status !== 'paid'): ?>
+                                        <button class="btn btn-primary btn-sm" onclick="openPayModal(<?php echo $b['tenant_id']; ?>, '<?php echo addslashes($b['tenant_name']); ?>', <?php echo $b['total_balance']; ?>, '<?php echo $b['month']; ?>', '<?php echo $b['year']; ?>', '<?php echo str_replace(',', ', ', $b['bill_types']); ?>')" title="Record Payment">
+                                            <i class="fas fa-money-bill-wave"></i>
                                         </button>
+                                        <?php else: ?>
+                                        <span style="font-size: 11px; color: var(--success); font-weight: 600;"><i class="fas fa-check-circle"></i> Cleared</span>
+                                        <?php endif; ?>
                                         <form method="POST" style="margin:0;">
                                             <input type="hidden" name="tenant_id" value="<?php echo $b['tenant_id']; ?>">
                                             <input type="hidden" name="property_id" value="<?php echo $current_property_id; ?>">
@@ -498,17 +585,26 @@ if ($current_property_id) {
         </div>
     </div>
 
-    <!-- Manual Adjust Modal -->
+    <!-- Payment / Adjust Modal -->
     <div class="modal" id="adjustModal">
         <div class="modal-content" style="background: white; padding: 30px; border-radius: 20px; width: 500px; box-shadow: 0 20px 50px rgba(0,0,0,0.2);">
-            <h3>Manual Bill Adjustment</h3>
+            <h3>Record Payment / Adjustment</h3>
             <form method="POST" style="margin-top: 20px;">
-                <input type="hidden" name="adjust_bill_id" id="adjustBillId">
+                <input type="hidden" name="adjust_tenant_id" id="adjustTenantId">
+                <input type="hidden" name="adjust_month" id="adjustMonth">
+                <input type="hidden" name="adjust_year" id="adjustYear">
+                <input type="hidden" name="redirect_property_id" value="<?php echo $current_property_id; ?>">
                 <div class="form-group">
-                    <label>Tenant: <span id="adjustTenantName"></span></label>
+                    <label>Tenant: <span id="adjustTenantName" style="font-weight:700; color: var(--dark);"></span></label>
                 </div>
                 <div class="form-group">
-                    <label>Current Balance: <span id="currentBalance"></span></label>
+                    <label>Period: <span id="adjustPeriod" style="font-weight:600; color: var(--primary);"></span></label>
+                </div>
+                <div class="form-group">
+                    <label>Bills: <span id="adjustBillTypes" style="font-size:12px; color: var(--gray);"></span></label>
+                </div>
+                <div class="form-group">
+                    <label>Total Balance Due: <span id="currentBalance" style="font-weight:700; color: var(--danger);"></span></label>
                 </div>
                 <div class="form-group">
                     <label>Adjustment Type</label>
@@ -521,10 +617,10 @@ if ($current_property_id) {
                 </div>
                 <div class="form-group">
                     <label>Amount (KES)</label>
-                    <input type="number" step="0.01" name="adjustment_amount" class="form-control" required>
+                    <input type="number" step="0.01" name="adjustment_amount" id="adjustAmount" class="form-control" required>
                 </div>
                 <div class="form-group">
-                    <label>Payment Method (for payments)</label>
+                    <label>Payment Method</label>
                     <select name="payment_method" class="form-control">
                         <option value="cash">Cash</option>
                         <option value="mpesa">M-Pesa</option>
@@ -533,12 +629,12 @@ if ($current_property_id) {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Notes (Optional)</label>
-                    <textarea name="adjustment_notes" class="form-control" rows="3"></textarea>
+                    <label>Notes / Reference (Optional)</label>
+                    <textarea name="adjustment_notes" class="form-control" rows="2" placeholder="e.g. M-Pesa ref: QWE123..."></textarea>
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 30px;">
                     <button type="button" class="btn btn-outline" style="flex: 1; background:#f8f9fa; border:1px solid #ddd;" onclick="closeAdjustModal()">Cancel</button>
-                    <button type="submit" name="apply_adjustment" class="btn btn-primary" style="flex: 1;">Apply Adjustment</button>
+                    <button type="submit" name="apply_adjustment" class="btn btn-primary" style="flex: 1;">Confirm Payment</button>
                 </div>
             </form>
         </div>
@@ -549,15 +645,28 @@ if ($current_property_id) {
         function openCustomBillModal() { 
             document.getElementById('customBillModal').style.display = 'flex'; 
         }
-        function openManualAdjustModal(id, name, balance) {
-            document.getElementById('adjustBillId').value = id;
-            document.getElementById('adjustTenantName').textContent = name;
-            document.getElementById('currentBalance').textContent = 'KES ' + balance;
+
+        function openPayModal(tenantId, tenantName, balance, month, year, billTypes) {
+            document.getElementById('adjustTenantId').value = tenantId;
+            document.getElementById('adjustMonth').value = month;
+            document.getElementById('adjustYear').value = year;
+            document.getElementById('adjustTenantName').textContent = tenantName;
+            document.getElementById('adjustPeriod').textContent = month + ' ' + year;
+            document.getElementById('adjustBillTypes').textContent = billTypes;
+            document.getElementById('currentBalance').textContent = 'KES ' + Number(balance).toLocaleString();
+            document.getElementById('adjustAmount').value = balance;
             document.getElementById('adjustModal').style.display = 'flex';
         }
 
         function closeAdjustModal() {
             document.getElementById('adjustModal').style.display = 'none';
+        }
+
+        // Close modals on background click
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
         }
     </script>
 </body>
