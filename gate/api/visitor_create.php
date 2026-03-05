@@ -21,6 +21,7 @@ $unit_id     = intval($data['unit_id'] ?? 0); // Changed from house_number to un
 $time_in     = $data['time_in'] ?? null;
 $time_out    = $data['time_out'] ?? null;
 $signature   = $data['signature'] ?? null;
+$visitor_type = trim($data['visitor_type'] ?? 'guest'); // contractor, delivery, guest, etc.
 
 // Basic validation
 $errors = [];
@@ -50,6 +51,13 @@ function normalize_datetime($dt) {
 }
 $time_in  = normalize_datetime($time_in);
 $time_out = normalize_datetime($time_out);
+
+// Add visitor_type column if it doesn't exist (for contractors)
+try {
+    $pdo->exec("ALTER TABLE visitors ADD COLUMN IF NOT EXISTS visitor_type VARCHAR(50) DEFAULT 'guest'");
+} catch (PDOException $e) {
+    // Column may already exist
+}
 
 // Get property_id and tenant_id from the unit
 $property_id = null;
@@ -98,8 +106,8 @@ if ($signature && preg_match('/^data:image\/png;base64,/', $signature)) {
 
 try {
     $sql = "INSERT INTO visitors
-        (property_id, tenant_id, name, id_number, phone_number, number_plate, visit_date, time_in, time_out)
-        VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)";
+        (property_id, tenant_id, name, id_number, phone_number, number_plate, visit_date, time_in, time_out, visitor_type)
+        VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?)";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         $property_id,
@@ -109,9 +117,42 @@ try {
         $phone ?: null,
         $plate ?: null,
         $time_in ?: date('H:i:s'),
-        $time_out ?: null
+        $time_out ?: null,
+        $visitor_type
     ]);
     $lastId = $pdo->lastInsertId();
+    
+    // If this is a contractor, also add/update them in the contractors table
+    if ($visitor_type === 'contractor' && $phone) {
+        // Check if contractor already exists by phone
+        $checkStmt = $pdo->prepare("SELECT id FROM contractors WHERE phone_number = ? AND landlord_id = (SELECT landlord_id FROM properties WHERE id = ?)");
+        $checkStmt->execute([$phone, $property_id]);
+        $existingContractor = $checkStmt->fetch();
+        
+        if (!$existingContractor) {
+            // Insert new contractor (assuming there's a way to get landlord_id from property)
+            $landlordStmt = $pdo->prepare("SELECT landlord_id FROM properties WHERE id = ?");
+            $landlordStmt->execute([$property_id]);
+            $landlordId = $landlordStmt->fetchColumn();
+            
+            if ($landlordId) {
+                // Try to determine category from purpose if available, otherwise default to 'Other'
+                $category = 'Other';
+                if (!empty($data['purpose'])) {
+                    $purpose = strtolower($data['purpose']);
+                    if (strpos($purpose, 'plumb') !== false) $category = 'Plumber';
+                    elseif (strpos($purpose, 'electr') !== false) $category = 'Electrician';
+                    elseif (strpos($purpose, 'carpent') !== false) $category = 'Carpenter';
+                    elseif (strpos($purpose, 'security') !== false) $category = 'Security';
+                    elseif (strpos($purpose, 'clean') !== false) $category = 'Cleaner';
+                }
+                
+                $contractorStmt = $pdo->prepare("INSERT INTO contractors (landlord_id, name, category, phone_number) VALUES (?, ?, ?, ?)");
+                $contractorStmt->execute([$landlordId, $full_name, $category, $phone]);
+            }
+        }
+    }
+    
     echo json_encode(['success' => true, 'id' => (int)$lastId]);
     exit;
 } catch (Exception $e) {

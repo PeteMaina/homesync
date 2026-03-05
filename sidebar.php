@@ -22,13 +22,14 @@ $current_page = basename($_SERVER['PHP_SELF']);
         margin-bottom: 24px;
     }
     
-    .sidebar-header h1 {
+.sidebar-header h1 {
         font-size: 24px;
         font-weight: 700;
         margin-bottom: 4px;
         display: flex;
         align-items: center;
         gap: 12px;
+        color: #4361ee;
     }
     
     .sidebar-header p {
@@ -87,9 +88,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
         font-weight: 600;
     }
 
-    .user-info h4 {
+.user-info h4 {
         font-size: 14px;
         font-weight: 600;
+        color: #4361ee;
     }
 
     .user-info p {

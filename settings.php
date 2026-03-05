@@ -5,8 +5,71 @@ require_once 'db_config.php';
 // Check if user is logged in
 requireLogin();
 
+function settingsTableExists($pdo, $table_name) {
+    try {
+        $stmt = $pdo->prepare("SHOW TABLES LIKE ?");
+        $stmt->execute([$table_name]);
+        return (bool)$stmt->fetchColumn();
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
 // Fetch properties to show in management
 $landlord_id = $_SESSION['admin_id'];
+$success_message = '';
+$error_message = '';
+
+// Handle apartment/property deletion
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_property'])) {
+    $property_id = intval($_POST['property_id'] ?? 0);
+
+    try {
+        $checkStmt = $pdo->prepare("SELECT id, name FROM properties WHERE id = ? AND landlord_id = ? LIMIT 1");
+        $checkStmt->execute([$property_id, $landlord_id]);
+        $property = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$property) {
+            $error_message = "Property not found or you do not have permission to delete it.";
+        } else {
+            $pdo->beginTransaction();
+
+            // Remove dependent data in a controlled order.
+            $pdo->prepare("DELETE p FROM payments p JOIN bills b ON p.bill_id = b.id JOIN units u ON b.unit_id = u.id WHERE u.property_id = ?")
+                ->execute([$property_id]);
+            $pdo->prepare("DELETE b FROM bills b JOIN units u ON b.unit_id = u.id WHERE u.property_id = ?")
+                ->execute([$property_id]);
+            $pdo->prepare("DELETE FROM visitors WHERE property_id = ?")->execute([$property_id]);
+
+            if (settingsTableExists($pdo, 'tenant_links')) {
+                $pdo->prepare("DELETE tl FROM tenant_links tl JOIN tenants t ON tl.tenant_id = t.id WHERE t.property_id = ?")
+                    ->execute([$property_id]);
+            }
+            if (settingsTableExists($pdo, 'security_links')) {
+                $pdo->prepare("DELETE FROM security_links WHERE property_id = ?")->execute([$property_id]);
+            }
+            if (settingsTableExists($pdo, 'gate_personnel')) {
+                $pdo->prepare("DELETE FROM gate_personnel WHERE property_id = ?")->execute([$property_id]);
+            }
+            if (settingsTableExists($pdo, 'caretakers')) {
+                $pdo->prepare("DELETE FROM caretakers WHERE property_id = ?")->execute([$property_id]);
+            }
+
+            $pdo->prepare("DELETE FROM tenants WHERE property_id = ?")->execute([$property_id]);
+            $pdo->prepare("DELETE FROM units WHERE property_id = ?")->execute([$property_id]);
+            $pdo->prepare("DELETE FROM properties WHERE id = ? AND landlord_id = ?")->execute([$property_id, $landlord_id]);
+
+            $pdo->commit();
+            $success_message = "Apartment deleted successfully with its mapped records.";
+        }
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $error_message = "Error deleting apartment: " . $e->getMessage();
+    }
+}
+
 $stmt = $pdo->prepare("SELECT * FROM properties WHERE landlord_id = ?");
 $stmt->execute([$landlord_id]);
 $properties = $stmt->fetchAll();
@@ -81,6 +144,8 @@ $properties = $stmt->fetchAll();
         
         .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
         .btn-outline:hover { background: var(--primary); color: white; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-danger:hover { background: #b91c1c; }
 
         .property-item {
             display: flex;
@@ -90,6 +155,7 @@ $properties = $stmt->fetchAll();
             background: var(--light);
             border-radius: 10px;
             font-size: 14px;
+            gap: 10px;
         }
     </style>
 </head>
@@ -102,6 +168,17 @@ $properties = $stmt->fetchAll();
                 <h1>Settings & Management</h1>
             </div>
 
+            <?php if ($success_message): ?>
+                <div style="padding: 12px 14px; border-radius: 10px; background: #dcfce7; color: #166534; margin-bottom: 20px;">
+                    <?php echo htmlspecialchars($success_message); ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($error_message): ?>
+                <div style="padding: 12px 14px; border-radius: 10px; background: #fee2e2; color: #991b1b; margin-bottom: 20px;">
+                    <?php echo htmlspecialchars($error_message); ?>
+                </div>
+            <?php endif; ?>
+
             <div class="settings-grid">
                 <!-- Property Management -->
                 <div class="settings-card">
@@ -111,8 +188,14 @@ $properties = $stmt->fetchAll();
                         <?php if (count($properties) > 0): ?>
                             <?php foreach ($properties as $p): ?>
                                 <div class="property-item">
-                                    <span><strong><?php echo htmlspecialchars($p['name']); ?></strong></span>
-                                    <small><?php echo htmlspecialchars($p['location']); ?></small>
+                                    <div>
+                                        <span><strong><?php echo htmlspecialchars($p['name']); ?></strong></span><br>
+                                        <small><?php echo htmlspecialchars($p['location']); ?></small>
+                                    </div>
+                                    <form method="POST" onsubmit="return confirm('Delete apartment <?php echo htmlspecialchars(addslashes($p['name']), ENT_QUOTES); ?> and all mapped data? This cannot be undone.');">
+                                        <input type="hidden" name="property_id" value="<?php echo (int)$p['id']; ?>">
+                                        <button type="submit" name="delete_property" class="btn btn-danger" style="padding: 8px 12px; font-size: 12px;">Delete</button>
+                                    </form>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>

@@ -6,6 +6,116 @@ require_once 'db_config.php';
 // Check if user is logged in
 requireLogin();
 
+// Ensure optional tenant columns exist outside transactions.
+try {
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+} catch (PDOException $e) {
+    // Continue; these columns may already exist or be managed elsewhere.
+}
+
+if (isset($_SESSION['tenant_success'])) {
+    $success = $_SESSION['tenant_success'];
+    unset($_SESSION['tenant_success']);
+}
+if (isset($_SESSION['tenant_error'])) {
+    $error = $_SESSION['tenant_error'];
+    unset($_SESSION['tenant_error']);
+}
+
+function tableExists($pdo, $table_name) {
+    try {
+        $stmt = $pdo->prepare("SHOW TABLES LIKE ?");
+        $stmt->execute([$table_name]);
+        return (bool)$stmt->fetchColumn();
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+function autoCreateBillsForTenant($pdo, $property_id, $tenant_id, $unit_id, $has_wifi, $has_garbage) {
+    $month = date('F');
+    $year = date('Y');
+
+    // Only auto-bill if this property has already started billing for the current month.
+    $cycleStmt = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM bills b
+        JOIN units u ON b.unit_id = u.id
+        WHERE u.property_id = ? AND b.month = ? AND b.year = ?
+    ");
+    $cycleStmt->execute([$property_id, $month, $year]);
+    if ((int)$cycleStmt->fetchColumn() === 0) {
+        return;
+    }
+
+    $unitStmt = $pdo->prepare("SELECT rent_amount, water_rate, wifi_fee, garbage_fee FROM units WHERE id = ? AND property_id = ? LIMIT 1");
+    $unitStmt->execute([$unit_id, $property_id]);
+    $unit = $unitStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$unit) {
+        return;
+    }
+
+    $tenantStmt = $pdo->prepare("SELECT balance_credit FROM tenants WHERE id = ? AND property_id = ? LIMIT 1");
+    $tenantStmt->execute([$tenant_id, $property_id]);
+    $tenant = $tenantStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$tenant) {
+        return;
+    }
+
+    $credit = (float)$tenant['balance_credit'];
+    $due_date = date('Y-m-d', strtotime('next month 5th'));
+
+    $createFixedBill = function ($bill_type, $amount) use ($pdo, $tenant_id, $unit_id, $month, $year, $due_date, &$credit) {
+        $amount = (float)$amount;
+        if ($amount <= 0) {
+            return;
+        }
+
+        $existsStmt = $pdo->prepare("SELECT id FROM bills WHERE tenant_id = ? AND bill_type = ? AND month = ? AND year = ? LIMIT 1");
+        $existsStmt->execute([$tenant_id, $bill_type, $month, $year]);
+        if ($existsStmt->fetch()) {
+            return;
+        }
+
+        $balance = $amount;
+        if ($credit > 0) {
+            $reduction = min($credit, $balance);
+            $balance -= $reduction;
+            $credit -= $reduction;
+        }
+
+        $status = $balance <= 0 ? 'paid' : 'unpaid';
+        $insertStmt = $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, due_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $insertStmt->execute([$tenant_id, $unit_id, $bill_type, $amount, $balance, $month, $year, $due_date, $status]);
+    };
+
+    $createFixedBill('rent', $unit['rent_amount']);
+    if ((int)$has_wifi === 1) {
+        $createFixedBill('wifi', $unit['wifi_fee']);
+    }
+    if ((int)$has_garbage === 1) {
+        $createFixedBill('garbage', $unit['garbage_fee']);
+    }
+
+    // Water placeholder for the month so the tenant appears in monthly billing actions.
+    $waterExistsStmt = $pdo->prepare("SELECT id FROM bills WHERE tenant_id = ? AND bill_type = 'water' AND month = ? AND year = ? LIMIT 1");
+    $waterExistsStmt->execute([$tenant_id, $month, $year]);
+    if (!$waterExistsStmt->fetch()) {
+        $prevStmt = $pdo->prepare("SELECT reading_curr FROM bills WHERE unit_id = ? AND bill_type = 'water' ORDER BY id DESC LIMIT 1");
+        $prevStmt->execute([$unit_id]);
+        $prev = $prevStmt->fetchColumn();
+        $prev = $prev !== false ? (float)$prev : 0;
+
+        $waterInsertStmt = $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, reading_curr, reading_prev, due_date, status) VALUES (?, ?, 'water', 0, 0, ?, ?, ?, ?, ?, 'unpaid')");
+        $waterInsertStmt->execute([$tenant_id, $unit_id, $month, $year, $prev, $prev, $due_date]);
+    }
+
+    $creditUpdateStmt = $pdo->prepare("UPDATE tenants SET balance_credit = ? WHERE id = ?");
+    $creditUpdateStmt->execute([$credit, $tenant_id]);
+}
+
 // Fetch all tenants with their property and unit details
 $tenants = [];
 try {
@@ -28,8 +138,17 @@ $stmt = $pdo->prepare("SELECT id, name FROM properties WHERE landlord_id = ?");
 $stmt->execute([$_SESSION['admin_id']]);
 $available_properties = $stmt->fetchAll();
 
-// For simplicity, we'll fetch all units. In a real app, this would be updated via JS based on selected property.
-$stmt = $pdo->prepare("SELECT u.id, u.unit_number, u.property_id FROM units u JOIN properties p ON u.property_id = p.id WHERE p.landlord_id = ?");
+// Fetch only vacant units (units without active tenants) for the modal dropdown
+$stmt = $pdo->prepare("
+    SELECT u.id, u.unit_number, u.property_id, u.rent_amount 
+    FROM units u 
+    JOIN properties p ON u.property_id = p.id 
+    WHERE p.landlord_id = ?
+    AND u.id NOT IN (
+        SELECT unit_id FROM tenants WHERE status = 'active'
+    )
+    ORDER BY u.unit_number ASC
+");
 $stmt->execute([$_SESSION['admin_id']]);
 $available_units = $stmt->fetchAll();
 
@@ -89,19 +208,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_tenant'])) {
     }
 }
 
-// Handle tenant deletion
+// Handle tenant move-out (vacate unit) - COMPLETE REMOVAL
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_tenant'])) {
     $tenant_id = $_POST['delete_tenant_id'];
 
     try {
+        $pdo->beginTransaction();
+
         // First verify this tenant belongs to the current landlord
         $stmt = $pdo->prepare("
-            SELECT t.id FROM tenants t
+            SELECT t.id, t.status, t.unit_id FROM tenants t
             JOIN properties p ON t.property_id = p.id
             WHERE t.id = ? AND p.landlord_id = ?
         ");
         $stmt->execute([$tenant_id, $_SESSION['admin_id']]);
-        if (!$stmt->fetch()) {
+        $tenant = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$tenant) {
+            $pdo->rollBack();
             $error = "Access denied: Tenant not found or doesn't belong to you.";
         } else {
             // Check if tenant has any unpaid bills
@@ -109,14 +232,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_tenant'])) {
             $stmt->execute([$tenant_id]);
             $unpaid_bills = $stmt->fetchColumn();
 
-            if ($unpaid_bills > 0) {
-                $error = "Cannot delete tenant with unpaid bills. Please settle all outstanding balances first.";
+if ($unpaid_bills > 0) {
+                $pdo->rollBack();
+                $error = "Cannot move out tenant with unpaid bills. Please settle all outstanding balances first.";
             } else {
-                // Delete tenant (cascade will handle related records)
+                // Delete all bills associated with this tenant first (to avoid FK constraint with payments)
+                $stmt = $pdo->prepare("DELETE FROM bills WHERE tenant_id = ?");
+                $stmt->execute([$tenant_id]);
+
+                // Delete any payments associated with this tenant's bills
+                $stmt = $pdo->prepare("DELETE FROM payments WHERE bill_id IN (SELECT id FROM bills WHERE tenant_id = ?)");
+                $stmt->execute([$tenant_id]);
+
+                // Delete visitor records linked to this tenant (due to FK constraint)
+                $stmt = $pdo->prepare("DELETE FROM visitors WHERE tenant_id = ?");
+                $stmt->execute([$tenant_id]);
+
+                // Revoke any tenant portal access link if table exists.
+                if (tableExists($pdo, 'tenant_links')) {
+                    $stmt = $pdo->prepare("DELETE FROM tenant_links WHERE tenant_id = ?");
+                    $stmt->execute([$tenant_id]);
+                }
+
+                // Delete the tenant completely from the system
                 $stmt = $pdo->prepare("DELETE FROM tenants WHERE id = ?");
                 $stmt->execute([$tenant_id]);
 
-                $success = "Tenant deleted successfully!";
+                $pdo->commit();
+                $success = "Tenant removed from the system completely. The unit is now vacant and ready for a new tenant.";
 
                 // Refresh the tenants list
                 $stmt = $pdo->prepare("
@@ -131,8 +274,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_tenant'])) {
                 $tenants = $stmt->fetchAll(PDO::FETCH_ASSOC);
             }
         }
-    } catch (PDOException $e) {
-        $error = "Error deleting tenant: " . $e->getMessage();
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $error = "Error moving out tenant: " . $e->getMessage();
     }
 }
 
@@ -146,6 +292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
     $move_in_date = $_POST['move_in_date'];
     $has_wifi = isset($_POST['has_wifi']) ? 1 : 0;
     $has_garbage = isset($_POST['has_garbage']) ? 1 : 0;
+    $custom_rent_amount = floatval($_POST['custom_rent_amount'] ?? 0);
     
     // Handle file upload (ID picture) with security validation
     $id_picture = null;
@@ -188,21 +335,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         }
     }
     
-    try {
-        // Check if an ACTIVE tenant with this ID already exists under this landlord
-        $stmt = $pdo->prepare("
-            SELECT t.id FROM tenants t 
-            JOIN properties p ON t.property_id = p.id 
-            WHERE t.id_number = ? AND t.status = 'active' AND p.landlord_id = ?
-        ");
-        $stmt->execute([$id_number, $_SESSION['admin_id']]);
-        if ($stmt->fetch()) {
-            $error = "A tenant with this ID number already exists.";
-        } else {
-            // Alter table to add id_picture and initial readings columns if they don't exist
-            $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
-            $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
-            $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+// Alter table to add id_picture and initial readings columns if they don't exist (MUST be outside transaction)
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+
+    if (!isset($error)) {
+        try {
+            // Ensure selected unit belongs to this landlord and selected property
+            $stmt = $pdo->prepare("
+                SELECT u.id
+                FROM units u
+                JOIN properties p ON u.property_id = p.id
+                WHERE u.id = ? AND u.property_id = ? AND p.landlord_id = ?
+                LIMIT 1
+            ");
+            $stmt->execute([$unit_id, $property_id, $_SESSION['admin_id']]);
+            if (!$stmt->fetch()) {
+                throw new Exception("Invalid unit selection for the selected property.");
+            }
+
+            if ($custom_rent_amount <= 0) {
+                throw new Exception("Please enter a valid rent amount greater than zero.");
+            }
+
+            // Block assigning a new tenant to an occupied unit
+            $stmt = $pdo->prepare("SELECT id FROM tenants WHERE unit_id = ? AND status = 'active' LIMIT 1");
+            $stmt->execute([$unit_id]);
+            if ($stmt->fetch()) {
+                throw new Exception("This unit is currently occupied. Move out the current tenant first.");
+            }
+
+            // Check if an ACTIVE tenant with this ID already exists under this landlord
+            $stmt = $pdo->prepare("
+                SELECT t.id FROM tenants t 
+                JOIN properties p ON t.property_id = p.id 
+                WHERE t.id_number = ? AND t.status = 'active' AND p.landlord_id = ?
+            ");
+            $stmt->execute([$id_number, $_SESSION['admin_id']]);
+            if ($stmt->fetch()) {
+                throw new Exception("A tenant with this ID number already exists.");
+            }
+
+            // Persist unit-specific rent chosen during tenant onboarding
+            $stmt = $pdo->prepare("UPDATE units SET rent_amount = ? WHERE id = ?");
+            $stmt->execute([$custom_rent_amount, $unit_id]);
 
             // Get initial readings from form
             $initial_water_reading = $_POST['initial_water_reading'] ?? 0;
@@ -211,8 +388,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             // Insert new tenant
             $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture, has_wifi, has_garbage, initial_water_reading, initial_electricity_reading) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading]);
-            
-            $success = "Tenant added successfully!";
+            $tenant_id = $pdo->lastInsertId();
+
+            // Auto-bill this new tenant for the current billing cycle when applicable.
+            autoCreateBillsForTenant($pdo, $property_id, $tenant_id, $unit_id, $has_wifi, $has_garbage);
+
+$success = "Tenant added successfully!";
             
             // Refresh the tenants list
             $stmt = $pdo->prepare("
@@ -225,9 +406,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             ");
             $stmt->execute([$_SESSION['admin_id']]);
             $tenants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Redirect to clear POST data and ensure modal closes
+            $_SESSION['tenant_success'] = $success;
+            header("Location: tenants.php");
+            exit();
+        } catch (Exception $e) {
+            $error = "Error adding tenant: " . $e->getMessage();
         }
-    } catch (PDOException $e) {
-        $error = "Error adding tenant: " . $e->getMessage();
     }
 }
 ?>
@@ -761,10 +947,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         <div class="main-content">
             <div class="page-header">
                 <h1 class="page-title">Tenant Management</h1>
-                <div class="page-actions">
-                    <button class="btn btn-outline">
-                        <i class="fas fa-download"></i> Export
-                    </button>
+<div class="page-actions">
                     <button class="btn btn-primary" id="addTenantBtn">
                         <i class="fas fa-plus"></i> Add Tenant
                     </button>
@@ -879,16 +1062,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                                             </div>
                                         </td>
                                         <td><?php echo date('M j, Y', strtotime($tenant['move_in_date'])); ?></td>
-                                        <td><span class="status-badge status-occupied">Occupied</span></td>
+                                        <td>
+                                            <?php
+                                            $is_active_tenant = (($tenant['status'] ?? 'active') === 'active');
+                                            ?>
+                                            <span class="status-badge <?php echo $is_active_tenant ? 'status-occupied' : 'status-vacant'; ?>">
+                                                <?php echo $is_active_tenant ? 'Occupied' : 'Vacated'; ?>
+                                            </span>
+                                        </td>
                                         <td>
                                             <button class="action-btn btn-edit" onclick="openEditModal(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>', '<?php echo htmlspecialchars($tenant['id_number']); ?>', '<?php echo htmlspecialchars($tenant['phone_number']); ?>', '<?php echo htmlspecialchars($tenant['unit_number']); ?>', '<?php echo htmlspecialchars($tenant['property_name']); ?>', '<?php echo $tenant['has_wifi']; ?>', '<?php echo $tenant['has_garbage']; ?>', '<?php echo $tenant['initial_water_reading']; ?>', '<?php echo $tenant['initial_electricity_reading']; ?>')"><i class="fas fa-edit"></i></button>
-                                            <button class="action-btn btn-delete" onclick="confirmDelete(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>')"><i class="fas fa-trash"></i></button>
+                                            <?php if ($is_active_tenant): ?>
+                                            <button class="action-btn btn-delete" onclick="confirmDelete(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>')"><i class="fas fa-sign-out-alt"></i></button>
+                                            <?php else: ?>
+                                            <button class="action-btn btn-delete" style="opacity: 0.4; cursor: not-allowed;" disabled><i class="fas fa-sign-out-alt"></i></button>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="8" class="text-center">No tenants found. Add your first tenant using the button above.</td>
+                                    <td colspan="9" class="text-center">No tenants found. Add your first tenant using the button above.</td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -937,12 +1131,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                             <select class="form-control" name="unit_id" id="unitSelect" required>
                                 <option value="">Select Unit</option>
                                 <?php foreach ($available_units as $u): ?>
-                                    <option value="<?php echo $u['id']; ?>" data-property="<?php echo $u['property_id']; ?>">
+                                    <option value="<?php echo $u['id']; ?>" data-property="<?php echo $u['property_id']; ?>" data-rent="<?php echo htmlspecialchars($u['rent_amount']); ?>">
                                         <?php echo htmlspecialchars($u['unit_number']); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Monthly Rent (KES)</label>
+                        <input type="number" step="0.01" min="0" class="form-control" name="custom_rent_amount" id="customRentAmount" required placeholder="Select a unit to preload rent">
                     </div>
                     
                     <div class="form-group">
@@ -1043,38 +1242,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
+<!-- Delete Confirmation Modal -->
     <div class="modal-overlay" id="deleteModal">
         <div class="modal">
             <div class="modal-header">
-                <h2 class="modal-title">Confirm Deletion</h2>
+                <h2 class="modal-title">Confirm Tenant Removal</h2>
                 <button class="modal-close" id="closeDeleteModal">&times;</button>
             </div>
             <div class="modal-body">
                 <div style="text-align: center; margin-bottom: 20px;">
                     <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--danger); margin-bottom: 16px;"></i>
-                    <h3 style="color: var(--danger); margin-bottom: 16px;">Are you sure you want to delete this tenant?</h3>
+                    <h3 style="color: var(--danger); margin-bottom: 16px;">Remove this tenant completely?</h3>
                 </div>
                 <div style="background: var(--light); padding: 16px; border-radius: 8px; margin-bottom: 20px;">
                     <p style="margin-bottom: 12px;"><strong>Tenant:</strong> <span id="deleteTenantName"></span></p>
-                    <p style="color: var(--danger); font-weight: 600; margin-bottom: 12px;">⚠️ This action cannot be undone!</p>
-                    <p style="font-size: 14px; color: var(--gray);">
-                        Deleting this tenant will permanently remove all associated data including:
-                    </p>
+                    <p style="color: var(--danger); font-weight: 600; margin-bottom: 12px;">Warning: This action cannot be undone.</p>
+                    <p style="font-size: 14px; color: var(--gray);">This action will:</p>
                     <ul style="font-size: 14px; color: var(--gray); margin-top: 8px;">
-                        <li>Tenant profile and contact information</li>
-                        <li>All billing history and records</li>
-                        <li>Associated visitor logs</li>
-                        <li>Payment records</li>
+                        <li>Completely remove the tenant from the system</li>
+                        <li>Delete all their billing records</li>
+                        <li>Revoke tenant portal access</li>
+                        <li>Make the unit available for a new tenant</li>
                     </ul>
                 </div>
                 <p style="font-size: 14px; color: var(--gray); text-align: center;">
-                    If this tenant has outstanding bills, deletion will be blocked. Please settle all balances first.
+                    If this tenant has outstanding bills, removal will be blocked. Please settle all balances first.
                 </p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline" id="cancelDelete">Cancel</button>
-                <button type="submit" class="btn btn-danger" id="confirmDeleteBtn">Yes, Delete Tenant</button>
+                <button type="submit" class="btn btn-danger" id="confirmDeleteBtn">Yes, Remove Completely</button>
             </div>
         </div>
     </div>
@@ -1165,11 +1362,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         // Dynamic unit filtering
         const propertySelect = document.getElementById('propertySelect');
         const unitSelect = document.getElementById('unitSelect');
+        const customRentAmount = document.getElementById('customRentAmount');
         const unitOptions = Array.from(unitSelect.options).slice(1); // Exclude first "Select Unit"
+
+        function syncSelectedUnitRent() {
+            const selectedOption = unitSelect.options[unitSelect.selectedIndex];
+            if (selectedOption && selectedOption.dataset && selectedOption.dataset.rent !== undefined) {
+                const rentValue = parseFloat(selectedOption.dataset.rent);
+                if (!Number.isNaN(rentValue)) {
+                    customRentAmount.value = rentValue.toFixed(2);
+                    return;
+                }
+            }
+            customRentAmount.value = '';
+        }
 
         propertySelect.addEventListener('change', function() {
             const propertyId = this.value;
             unitSelect.innerHTML = '<option value="">Select Unit</option>';
+            customRentAmount.value = '';
 
             unitOptions.forEach(opt => {
                 if (opt.dataset.property === propertyId) {
@@ -1177,6 +1388,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
                 }
             });
         });
+
+        unitSelect.addEventListener('change', syncSelectedUnitRent);
 
         // Close modal when clicking outside
         tenantModal.addEventListener('click', (e) => {

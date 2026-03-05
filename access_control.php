@@ -27,7 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = $_POST['type'] ?? ''; // 'gate' or 'caretaker'
     $prop_id = intval($_POST['property_id'] ?? 0);
 
-    if (in_array($prop_id, $property_ids)) {
+    if (!in_array($type, ['gate', 'caretaker'], true)) {
+        $error_message = "Invalid personnel type selected.";
+    } elseif (in_array($prop_id, $property_ids)) {
         $table = ($type === 'gate') ? 'gate_personnel' : 'caretakers';
         
         if ($action === 'create') {
@@ -44,9 +46,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($action === 'delete') {
             $id = intval($_POST['id']);
-            $pdo->prepare("DELETE FROM $table WHERE id = ? AND property_id = ?")->execute([$id, $prop_id]);
-            $success_message = ucfirst($type) . " account deleted.";
+            $delStmt = $pdo->prepare("DELETE FROM $table WHERE id = ? AND property_id = ?");
+            $delStmt->execute([$id, $prop_id]);
+            if ($delStmt->rowCount() > 0) {
+                $success_message = ucfirst($type) . " account deleted.";
+            } else {
+                $error_message = "Account not found or already deleted.";
+            }
         }
+    } else {
+        $error_message = "Invalid property selected.";
     }
 }
 
@@ -148,28 +157,40 @@ $caretakers = $pdo->query("SELECT c.*, p.name as property_name FROM caretakers c
                 <tbody>
                     <?php foreach ($gate_staff as $g): ?>
                         <tr>
-                            <td><?php echo htmlspecialchars($g['full_name']); ?></td>
                             <td><span class="badge badge-gate">Gate Personnel</span></td>
+                            <td><?php echo htmlspecialchars($g['full_name']); ?></td>
                             <td><code><?php echo htmlspecialchars($g['username']); ?></code></td>
                             <td><?php echo htmlspecialchars($g['property_name']); ?></td>
                             <td>
                                 <div style="display:flex; gap:10px;">
                                     <button class="btn btn-sm btn-info" onclick="copyLink('gate', '<?php echo $g['username']; ?>')">Copy Link</button>
-                                    <a href="?delete_gate=<?php echo $g['id']; ?>" class="btn btn-sm btn-danger" onclick="return confirm('Delete this account?')">Delete</a>
+                                    <form method="POST" onsubmit="return confirm('Delete this account?');" style="margin:0;">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="type" value="gate">
+                                        <input type="hidden" name="property_id" value="<?php echo (int)$g['property_id']; ?>">
+                                        <input type="hidden" name="id" value="<?php echo (int)$g['id']; ?>">
+                                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                     <?php foreach ($caretakers as $c): ?>
                         <tr>
-                            <td><?php echo htmlspecialchars($c['full_name']); ?></td>
                             <td><span class="badge badge-caretaker">Caretaker</span></td>
+                            <td><?php echo htmlspecialchars($c['full_name']); ?></td>
                             <td><code><?php echo htmlspecialchars($c['username']); ?></code></td>
                             <td><?php echo htmlspecialchars($c['property_name']); ?></td>
                             <td>
                                 <div style="display:flex; gap:10px;">
                                     <button class="btn btn-sm btn-info" onclick="copyLink('caretaker', '<?php echo $c['username']; ?>')">Copy Link</button>
-                                    <a href="?delete_caretaker=<?php echo $c['id']; ?>" class="btn btn-sm btn-danger" onclick="return confirm('Delete this account?')">Delete</a>
+                                    <form method="POST" onsubmit="return confirm('Delete this account?');" style="margin:0;">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="type" value="caretaker">
+                                        <input type="hidden" name="property_id" value="<?php echo (int)$c['property_id']; ?>">
+                                        <input type="hidden" name="id" value="<?php echo (int)$c['id']; ?>">
+                                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
