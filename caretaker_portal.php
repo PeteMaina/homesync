@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_reading'])) {
                 <i class="fas fa-tint" style="color:white;"></i>
             </div>
             <div>
-                <h2 style="margin:0; font-size:16px;">HomeSync Caretaker</h2>
+                <h2 style="margin:0; font-size:16px;">Nyumbaflow Caretaker</h2>
                 <p style="margin:0; font-size:12px; opacity:0.7;"><?php echo htmlspecialchars($property['name']); ?></p>
             </div>
         </div>

@@ -39,7 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Personnel Login - HomeSync</title>
+    <title>Personnel Login - Nyumbaflow</title>
+    <link rel="shortcut icon" href="../icons/home.png" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { background: #0f172a; color: white; font-family: 'Inter', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
@@ -54,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="login-card">
-        <h1>HomeSync</h1>
+        <h1>Nyumbaflow</h1>
         <p style="text-align:center; color:#94a3b8; margin-bottom:20px;">Personnel Portal</p>
         
         <?php if ($error): ?>

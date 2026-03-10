@@ -151,7 +151,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
 
 <div class="sidebar">
     <div class="sidebar-header">
-        <h1><i class="fas fa-home"></i> HomeSync</h1>
+<h1><i class="fas fa-home"></i> Nyumbaflow</h1>
         <p>Property Management</p>
     </div>
     
@@ -165,11 +165,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <span>Billing</span>
         </a>
         <a href="tenants.php" class="nav-item <?php echo $current_page == 'tenants.php' ? 'active' : ''; ?>">
-            <i class="fas fa-users-cog"></i>
+            <i class="fas fa-user-friends"></i>
             <span>Tenants</span>
         </a>
         <a href="contractors.php" class="nav-item <?php echo $current_page == 'contractors.php' ? 'active' : ''; ?>">
-            <i class="fas fa-user-friends"></i>
+            <i class="fas fa-users-cog"></i>
             <span>Contractors</span>
         </a>
         <a href="notifications.php" class="nav-item <?php echo $current_page == 'notifications.php' ? 'active' : ''; ?>">
@@ -204,7 +204,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
     </div>
 
     <div class="footer">
-        <p>&copy; <?php echo date('Y'); ?> HomeSync. All rights reserved.</p>
+        <p>&copy; <?php echo date('Y'); ?> Nyumbaflow. All rights reserved.</p>
         <p>Powered by <a href="mailto:jacetechnologies@gmail.com">Jacetechnologies@gmail.com</a></p>
         <p>Contact: <a href="tel:+254725531336">+254 725 531336</a></p>
     </div>

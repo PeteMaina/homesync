@@ -135,7 +135,7 @@ $units = $stmt->fetchAll();
                 <i class="fas fa-shield-alt" style="color:white;"></i>
             </div>
             <div>
-                <h2 style="margin:0; font-size:16px;">HomeSync Security</h2>
+                <h2 style="margin:0; font-size:16px;">Nyumbaflow Security</h2>
                 <p style="margin:0; font-size:12px; opacity:0.7;"><?php echo htmlspecialchars($property['name']); ?></p>
             </div>
         </div>

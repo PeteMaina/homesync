@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $garbage_fee = floatval($_POST['garbage_fee'] ?? 0);
     $late_fees_enabled = intval($_POST['late_fees'] ?? 0);
     $penalty_amount = floatval($_POST['penalty_amount'] ?? 0);
-    $celcom_id = $_POST['celcom_id'] ?? 'HOMESYNC';
+$celcom_id = $_POST['celcom_id'] ?? 'NYUMBAFLOW';
 
     if (!$properties_data || empty($properties_data)) {
         die("No property data received.");
