@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['bootstrap'])) {
 </head>
 <body>
     <div class="login-card">
-        <h1>HomeSync</h1><h1>SuperAdmin</h1>
+        <h1>Nyumbaflow</h1><h1>SuperAdmin</h1>
         <?php if ($error): ?>
             <div class="error"><?php echo $error; ?></div>
         <?php endif; ?>

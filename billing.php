@@ -38,10 +38,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_readings'])) {
         foreach ($readings as $unit_id => $curr) {
             if ($curr === '') continue;
             
-            // Get previous reading (last month's current)
-            $prevStmt = $pdo->prepare("SELECT reading_curr FROM bills WHERE unit_id = ? AND bill_type = 'water' ORDER BY id DESC LIMIT 1");
-            $prevStmt->execute([$unit_id]);
-            $prev = $prevStmt->fetchColumn() ?: 0;
+            // Get active tenant for this unit to ensure we use their specific reading history
+            $tStmtCheck = $pdo->prepare("SELECT id, initial_water_reading FROM tenants WHERE unit_id = ? AND status = 'active' LIMIT 1");
+            $tStmtCheck->execute([$unit_id]);
+            $tenantData = $tStmtCheck->fetch(PDO::FETCH_ASSOC);
+            
+            $prev = 0;
+            if ($tenantData) {
+                // Get the latest reading for this specific tenant, excluding the current month/year if we're updating a placeholder
+                $prevStmt = $pdo->prepare("SELECT reading_curr FROM bills WHERE tenant_id = ? AND bill_type = 'water' AND NOT (month = ? AND year = ?) ORDER BY id DESC LIMIT 1");
+                $prevStmt->execute([$tenantData['id'], $month, $year]);
+                $prev = $prevStmt->fetchColumn();
+                
+                if ($prev === false) {
+                    // No history for this tenant yet? Use their initial reading
+                    $prev = $tenantData['initial_water_reading'];
+                }
+            }
+            $prev = (float)$prev;
             
             // Check if water bill for this month exists
             $check = $pdo->prepare("SELECT id FROM bills WHERE unit_id = ? AND bill_type = 'water' AND month = ? AND year = ?");
@@ -181,8 +195,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['apply_adjustment'])) 
 
             // Record the overall payment (link to first bill for reference)
             if (!empty($pending_bills)) {
-                $payStmt = $pdo->prepare("INSERT INTO payments (bill_id, amount, payment_method, transaction_reference, payment_date) VALUES (?, ?, ?, ?, NOW())");
-                $payStmt->execute([$pending_bills[0]['id'], $amount, $payment_method, $notes]);
+                $v_now = date('Y-m-d H:i:s');
+                $payStmt = $pdo->prepare("INSERT INTO payments (bill_id, amount, payment_method, transaction_reference, payment_date) VALUES (?, ?, ?, ?, ?)");
+                $payStmt->execute([$pending_bills[0]['id'], $amount, $payment_method, $notes, $v_now]);
             }
 
             // Distribute payment across bills sequentially
@@ -230,10 +245,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['apply_adjustment'])) 
 
         } elseif ($adjustment_type === 'penalty') {
             // Add penalty as a new bill entry
+            $v_today = date('Y-m-d');
             $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, due_date, status) 
-                SELECT ?, unit_id, 'penalty', ?, ?, ?, ?, DATE_ADD(CURDATE(), INTERVAL 5 DAY), 'unpaid' 
+                SELECT ?, unit_id, 'penalty', ?, ?, ?, ?, DATE_ADD(?, INTERVAL 5 DAY), 'unpaid' 
                 FROM tenants WHERE id = ?")
-                ->execute([$tenant_id, $amount, $amount, $adj_month, $adj_year, $tenant_id]);
+                ->execute([$tenant_id, $amount, $amount, $adj_month, $adj_year, $v_today, $tenant_id]);
 
         } elseif ($adjustment_type === 'discount' || $adjustment_type === 'credit') {
             // Distribute discount/credit across unpaid bills
@@ -286,7 +302,8 @@ if ($current_property_id) {
             SUM(b.amount) as total_amount, 
             SUM(b.balance) as total_balance,
             GROUP_CONCAT(DISTINCT b.bill_type ORDER BY FIELD(b.bill_type, 'rent','water','wifi','garbage','penalty','other')) as bill_types,
-            t.name as tenant_name, u.unit_number
+            GROUP_CONCAT(CONCAT(b.bill_type, ':', b.amount, ':', b.reading_curr, ':', b.reading_prev) SEPARATOR ';') as breakdown,
+            t.name as tenant_name, t.phone_number, t.secondary_phone_number, u.unit_number
         FROM bills b 
         JOIN units u ON b.unit_id = u.id 
         JOIN tenants t ON b.tenant_id = t.id 
@@ -370,6 +387,19 @@ if ($current_property_id) {
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
         .form-control { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; }
+
+        /* Breakdown Card Styles */
+        .breakdown-header { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #eee; }
+        .breakdown-header h4 { font-size: 18px; color: var(--dark); margin-bottom: 5px; }
+        .breakdown-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px; color: var(--gray); }
+        .breakdown-info div span { font-weight: 600; color: var(--dark); }
+        .breakdown-table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+        .breakdown-table th { text-align: left; padding: 10px; font-size: 12px; color: var(--gray); border-bottom: 2px solid #f1f5f9; }
+        .breakdown-table td { padding: 12px 10px; border-bottom: 1px solid #f8fafc; font-size: 14px; }
+        .breakdown-total { margin-top: 20px; padding-top: 15px; border-top: 2px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+        .breakdown-total span:first-child { font-weight: 600; color: var(--gray); }
+        .breakdown-total span:last-child { font-size: 20px; font-weight: 800; color: var(--primary); }
+        .unit-pill { font-size: 11px; background: #eff6ff; color: #1e40af; padding: 2px 8px; border-radius: 4px; margin-left: 5px; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -479,6 +509,10 @@ if ($current_property_id) {
                                         </span>
                                     </td>
                                     <td style="display: flex; gap: 5px;">
+                                        <button class="action-btn" style="background: rgba(67, 97, 238, 0.1); color: var(--primary);" 
+                                                    onclick="viewBreakdown('<?php echo htmlspecialchars($b['tenant_name']); ?>', '<?php echo $b['phone_number']; ?>', '<?php echo $b['secondary_phone_number'] ?? ''; ?>', '<?php echo $b['unit_number']; ?>', '<?php echo $b['month'] . ' ' . $b['year']; ?>', '<?php echo $b['breakdown']; ?>', 'KES <?php echo number_format($b['total_amount']); ?>')" title="View Breakdown">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
                                         <?php if ($status !== 'paid'): ?>
                                         <button class="btn btn-primary btn-sm" onclick="openPayModal(<?php echo $b['tenant_id']; ?>, '<?php echo addslashes($b['tenant_name']); ?>', <?php echo $b['total_balance']; ?>, '<?php echo $b['month']; ?>', '<?php echo $b['year']; ?>', '<?php echo str_replace(',', ', ', $b['bill_types']); ?>')" title="Record Payment">
                                             <i class="fas fa-money-bill-wave"></i>
@@ -523,7 +557,11 @@ if ($current_property_id) {
                             <?php
                             $uStmt = $pdo->prepare("
                                 SELECT u.id, u.unit_number, t.name as tenant_name, 
-                                (SELECT reading_curr FROM bills WHERE unit_id = u.id AND bill_type = 'water' ORDER BY id DESC LIMIT 1) as last_reading
+                                COALESCE(
+                                    (SELECT reading_curr FROM bills WHERE tenant_id = t.id AND bill_type = 'water' ORDER BY id DESC LIMIT 1),
+                                    t.initial_water_reading,
+                                    0
+                                ) as last_reading
                                 FROM units u 
                                 LEFT JOIN tenants t ON u.id = t.unit_id AND t.status = 'active'
                                 WHERE u.property_id = ?
@@ -641,6 +679,43 @@ if ($current_property_id) {
         </div>
     </div>
 
+    <!-- Breakdown Modal -->
+    <div class="modal" id="breakdownModal">
+        <div class="modal-content" style="background: white; padding: 30px; border-radius: 20px; width: 550px; box-shadow: 0 20px 50px rgba(0,0,0,0.2);">
+            <div class="breakdown-header">
+                <h3 style="margin-bottom:15px;">Bill Breakdown</h3>
+                <div class="breakdown-info">
+                    <div style="margin-bottom:5px;">Tenant: <span id="bdTenantName" style="font-weight:600; color:var(--dark);"></span></div>
+                    <div style="margin-bottom:5px;">House: <span id="bdUnitNumber" style="font-weight:600; color:var(--dark);"></span></div>
+                    <div style="margin-bottom:5px;">Phone: <span id="bdPhone" style="font-weight:600; color:var(--dark);"></span> <span id="bdSecondaryPhone" style="font-size: 0.9em; color: var(--gray); margin-left: 5px;"></span></div>
+                    <div style="margin-bottom:5px;">Period: <span id="bdPeriod" style="font-weight:600; color:var(--primary);"></span></div>
+                </div>
+            </div>
+            
+            <table class="breakdown-table">
+                <thead>
+                    <tr>
+                        <th>Bill Type</th>
+                        <th>Calculation / Readings</th>
+                        <th style="text-align: right;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody id="bdItems">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+
+            <div class="breakdown-total">
+                <span>TOTAL EXPECTED</span>
+                <span id="bdTotal"></span>
+            </div>
+
+            <div style="margin-top: 30px; text-align: center;">
+                <button type="button" class="btn btn-primary" style="width: 100%;" onclick="closeModal('breakdownModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
         function openCustomBillModal() { 
@@ -661,6 +736,40 @@ if ($current_property_id) {
 
         function closeAdjustModal() {
             document.getElementById('adjustModal').style.display = 'none';
+        }
+
+        function viewBreakdown(name, phone, secondaryPhone, unit, period, breakdownStr, total) {
+            document.getElementById('bdTenantName').textContent = name;
+            document.getElementById('bdPhone').textContent = phone;
+            document.getElementById('bdSecondaryPhone').textContent = secondaryPhone ? '/ ' + secondaryPhone : '';
+            document.getElementById('bdUnitNumber').textContent = unit;
+            document.getElementById('bdPeriod').textContent = period;
+            document.getElementById('bdTotal').textContent = total;
+
+            const itemsContainer = document.getElementById('bdItems');
+            itemsContainer.innerHTML = '';
+
+            const items = breakdownStr.split(';');
+            items.forEach(item => {
+                // item format: type:amount:curr:prev
+                const [type, amount, curr, prev] = item.split(':');
+                const row = document.createElement('tr');
+                
+                let calculation = '-';
+                if (type.toLowerCase() === 'water') {
+                    const units = Math.max(0, curr - prev);
+                    calculation = `${prev} → ${curr} <span class="unit-pill">${units.toFixed(1)} units</span>`;
+                }
+
+                row.innerHTML = `
+                    <td style="text-transform: capitalize; font-weight: 500;">${type}</td>
+                    <td>${calculation}</td>
+                    <td style="text-align: right; font-weight: 600;">KES ${Number(amount).toLocaleString()}</td>
+                `;
+                itemsContainer.appendChild(row);
+            });
+
+            document.getElementById('breakdownModal').style.display = 'flex';
         }
 
         // Close modals on background click

@@ -47,8 +47,9 @@ $celcom_id = $_POST['celcom_id'] ?? 'NYUMBAFLOW';
 
             // 3. Generate initial Security Link for this property
             $token = bin2hex(random_bytes(16));
-            $secStmt = $pdo->prepare("INSERT INTO security_links (property_id, access_token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))");
-            $secStmt->execute([$property_id, $token]);
+            $v_now = date('Y-m-d H:i:s');
+            $secStmt = $pdo->prepare("INSERT INTO security_links (property_id, access_token, expires_at) VALUES (?, ?, DATE_ADD(?, INTERVAL 24 HOUR))");
+            $secStmt->execute([$property_id, $token, $v_now]);
         }
 
         $pdo->commit();

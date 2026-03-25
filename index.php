@@ -68,8 +68,9 @@ $stmt->execute([$current_property_id, $current_property_id, $current_property_id
 $stats = $stmt->fetch();
 
 // Fetch Today's Visitor Count
-$stmt = $pdo->prepare("SELECT COUNT(*) FROM visitors WHERE property_id = ? AND visit_date = CURDATE()");
-$stmt->execute([$current_property_id]);
+$v_today = date('Y-m-d');
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM visitors WHERE property_id = ? AND visit_date = ?");
+$stmt->execute([$current_property_id, $v_today]);
 $visitors_today = $stmt->fetchColumn();
 
 // Fetch Recent Visitors (last 5)

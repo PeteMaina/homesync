@@ -48,8 +48,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['log_visitor'])) {
     $v_type = $_POST['v_type'] ?? 'guest';
     $v_purpose = $_POST['v_purpose'] ?? '';
     
-    $stmt = $pdo->prepare("INSERT INTO visitors (property_id, tenant_id, unit_id, name, id_number, phone_number, number_plate, id_image, visitor_type, purpose, visit_date, time_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())");
-    $stmt->execute([$property['id'], $data['tenant_id'] ?? null, $unit_id, $name, $id_number, $phone, $plate, $id_image, $v_type, $v_purpose]);
+    $v_date = date('Y-m-d');
+    $v_time = date('H:i:s');
+    
+    $stmt = $pdo->prepare("INSERT INTO visitors (property_id, tenant_id, unit_id, name, id_number, phone_number, number_plate, id_image, visitor_type, purpose, visit_date, time_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$property['id'], $data['tenant_id'] ?? null, $unit_id, $name, $id_number, $phone, $plate, $id_image, $v_type, $v_purpose, $v_date, $v_time]);
 
 
     
@@ -73,21 +76,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['log_visitor'])) {
 // Handle Visitor Logout (Exit)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout_visitor'])) {
     $visitor_id = $_POST['visitor_id'];
-    $stmt = $pdo->prepare("UPDATE visitors SET time_out = CURTIME() WHERE id = ?");
-    $stmt->execute([$visitor_id]);
+    $v_time_out = date('H:i:s');
+    $stmt = $pdo->prepare("UPDATE visitors SET time_out = ? WHERE id = ?");
+    $stmt->execute([$v_time_out, $visitor_id]);
     $success = "Visitor logged out successfully!";
 }
 
 // Fetch checked-in visitors (no time_out yet)
+$v_today = date('Y-m-d');
 $stmt = $pdo->prepare("
     SELECT v.*, u.unit_number 
     FROM visitors v 
     LEFT JOIN units u ON v.unit_id = u.id
-    WHERE v.property_id = ? AND v.time_out IS NULL AND v.visit_date = CURDATE()
+    WHERE v.property_id = ? AND v.time_out IS NULL AND v.visit_date = ?
     ORDER BY v.time_in DESC
 ");
 
-$stmt->execute([$property['id']]);
+$stmt->execute([$property['id'], $v_today]);
 $active_visitors = $stmt->fetchAll();
 
 // Fetch all units for the property

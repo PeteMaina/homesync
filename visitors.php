@@ -670,8 +670,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                 <th>Host Information</th>
                                 <th>Vehicle & ID</th>
                                 <th>Status</th>
-
-                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -732,14 +730,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                                 <span class="status-badge status-completed">Completed</span>
                                             <?php endif; ?>
                                         </td>
-                                        <td>
-                                            <button class="action-btn btn-view"><i class="fas fa-eye"></i> View</button>
-                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="6" class="text-center">No visitors found.</td>
+                                    <td colspan="5" class="text-center">No visitors found.</td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>

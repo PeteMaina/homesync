@@ -30,8 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_security'])) {
             $access_token = bin2hex(random_bytes(32));
 
             // Insert security personnel
-            $stmt = $pdo->prepare("INSERT INTO security_personnel (landlord_id, name, email, access_token, created_at) VALUES (?, ?, ?, ?, NOW())");
-            $stmt->execute([$landlord_id, $name, $email, $access_token]);
+            $v_now = date('Y-m-d H:i:s');
+            $stmt = $pdo->prepare("INSERT INTO security_personnel (landlord_id, name, email, access_token, created_at) VALUES (?, ?, ?, ?, ?)");
+            $stmt->execute([$landlord_id, $name, $email, $access_token, $v_now]);
 
             // Send magic link email (simulated)
             $magic_link = "http://localhost/homesync/gate/index2.php?token=" . $access_token;

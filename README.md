@@ -38,7 +38,7 @@ To empower property owners with technology that simplifies property management, 
 
 ### 💰 Automated Billing System
 - **Rent Billing**: Automated monthly rent generation
-- **Utility Billing**: Water, electricity, WiFi, and garbage collection tracking
+- **Utility Billing**: Water, WiFi, and garbage collection tracking
 - **Custom Bills**: Create one-time or recurring custom charges
 - **Payment Tracking**: Record payments and track outstanding balances
 - **Automatic Calculations**: Smart bill calculations with tenant credits

@@ -107,7 +107,7 @@ if ($signature && preg_match('/^data:image\/png;base64,/', $signature)) {
 try {
     $sql = "INSERT INTO visitors
         (property_id, tenant_id, name, id_number, phone_number, number_plate, visit_date, time_in, time_out, visitor_type)
-        VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?)";
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         $property_id,
@@ -116,6 +116,7 @@ try {
         $citizen_id ?: null,
         $phone ?: null,
         $plate ?: null,
+        date('Y-m-d'),
         $time_in ?: date('H:i:s'),
         $time_out ?: null,
         $visitor_type

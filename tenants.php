@@ -10,7 +10,8 @@ requireLogin();
 try {
     $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
     $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
-    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS secondary_phone_number VARCHAR(15) NULL");
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS wifi_fee DECIMAL(10,2) DEFAULT 0");
 } catch (PDOException $e) {
     // Continue; these columns may already exist or be managed elsewhere.
 }
@@ -57,7 +58,7 @@ function autoCreateBillsForTenant($pdo, $property_id, $tenant_id, $unit_id, $has
         return;
     }
 
-    $tenantStmt = $pdo->prepare("SELECT balance_credit FROM tenants WHERE id = ? AND property_id = ? LIMIT 1");
+    $tenantStmt = $pdo->prepare("SELECT balance_credit, wifi_fee FROM tenants WHERE id = ? AND property_id = ? LIMIT 1");
     $tenantStmt->execute([$tenant_id, $property_id]);
     $tenant = $tenantStmt->fetch(PDO::FETCH_ASSOC);
     if (!$tenant) {
@@ -93,7 +94,8 @@ function autoCreateBillsForTenant($pdo, $property_id, $tenant_id, $unit_id, $has
 
     $createFixedBill('rent', $unit['rent_amount']);
     if ((int)$has_wifi === 1) {
-        $createFixedBill('wifi', $unit['wifi_fee']);
+        $wifi_amt = (float)($tenant['wifi_fee'] > 0 ? $tenant['wifi_fee'] : $unit['wifi_fee']);
+        $createFixedBill('wifi', $wifi_amt);
     }
     if ((int)$has_garbage === 1) {
         $createFixedBill('garbage', $unit['garbage_fee']);
@@ -103,9 +105,17 @@ function autoCreateBillsForTenant($pdo, $property_id, $tenant_id, $unit_id, $has
     $waterExistsStmt = $pdo->prepare("SELECT id FROM bills WHERE tenant_id = ? AND bill_type = 'water' AND month = ? AND year = ? LIMIT 1");
     $waterExistsStmt->execute([$tenant_id, $month, $year]);
     if (!$waterExistsStmt->fetch()) {
-        $prevStmt = $pdo->prepare("SELECT reading_curr FROM bills WHERE unit_id = ? AND bill_type = 'water' ORDER BY id DESC LIMIT 1");
-        $prevStmt->execute([$unit_id]);
+        // Try to get the latest reading for this specific tenant first
+        $prevStmt = $pdo->prepare("SELECT reading_curr FROM bills WHERE tenant_id = ? AND bill_type = 'water' ORDER BY id DESC LIMIT 1");
+        $prevStmt->execute([$tenant_id]);
         $prev = $prevStmt->fetchColumn();
+        
+        if ($prev === false) {
+            // No previous bills? Use the initial reading from the tenant record
+            $tReadStmt = $pdo->prepare("SELECT initial_water_reading FROM tenants WHERE id = ?");
+            $tReadStmt->execute([$tenant_id]);
+            $prev = $tReadStmt->fetchColumn();
+        }
         $prev = $prev !== false ? (float)$prev : 0;
 
         $waterInsertStmt = $pdo->prepare("INSERT INTO bills (tenant_id, unit_id, bill_type, amount, balance, month, year, reading_curr, reading_prev, due_date, status) VALUES (?, ?, 'water', 0, 0, ?, ?, ?, ?, ?, 'unpaid')");
@@ -158,10 +168,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_tenant'])) {
     $name = $_POST['edit_name'];
     $id_number = $_POST['edit_id_number'];
     $phone_number = $_POST['edit_phone_number'];
+    $secondary_phone_number = $_POST['edit_secondary_phone_number'] ?? null;
     $has_wifi = isset($_POST['edit_has_wifi']) ? 1 : 0;
+    $wifi_fee = floatval($_POST['edit_wifi_fee'] ?? 0);
     $has_garbage = isset($_POST['edit_has_garbage']) ? 1 : 0;
     $initial_water_reading = $_POST['edit_initial_water_reading'] ?? 0;
-    $initial_electricity_reading = $_POST['edit_initial_electricity_reading'] ?? 0;
 
     try {
         // First verify this tenant belongs to the current landlord
@@ -180,13 +191,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_tenant'])) {
             if ($stmt->fetch()) {
                 $error = "A tenant with this ID number already exists.";
             } else {
-                // Alter table to add initial readings columns if they don't exist
-                $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
-                $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
-
                 // Update tenant
-                $stmt = $pdo->prepare("UPDATE tenants SET name = ?, id_number = ?, phone_number = ?, has_wifi = ?, has_garbage = ?, initial_water_reading = ?, initial_electricity_reading = ? WHERE id = ?");
-                $stmt->execute([$name, $id_number, $phone_number, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading, $tenant_id]);
+                $stmt = $pdo->prepare("UPDATE tenants SET name = ?, id_number = ?, phone_number = ?, secondary_phone_number = ?, has_wifi = ?, wifi_fee = ?, has_garbage = ?, initial_water_reading = ? WHERE id = ?");
+                $stmt->execute([$name, $id_number, $phone_number, $secondary_phone_number, $has_wifi, $wifi_fee, $has_garbage, $initial_water_reading, $tenant_id]);
 
                 $success = "Tenant updated successfully!";
 
@@ -289,8 +296,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
     $property_id = $_POST['property_id'];
     $unit_id = $_POST['unit_id'];
     $phone_number = $_POST['phone_number'];
+    $secondary_phone_number = $_POST['secondary_phone_number'] ?? null;
     $move_in_date = $_POST['move_in_date'];
     $has_wifi = isset($_POST['has_wifi']) ? 1 : 0;
+    $wifi_fee = floatval($_POST['wifi_fee'] ?? 0);
     $has_garbage = isset($_POST['has_garbage']) ? 1 : 0;
     $custom_rent_amount = floatval($_POST['custom_rent_amount'] ?? 0);
     
@@ -338,7 +347,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
 // Alter table to add id_picture and initial readings columns if they don't exist (MUST be outside transaction)
     $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
     $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
-    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_electricity_reading DECIMAL(10,2) DEFAULT 0");
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS secondary_phone_number VARCHAR(15) NULL");
+    $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS wifi_fee DECIMAL(10,2) DEFAULT 0");
 
     if (!isset($error)) {
         try {
@@ -383,11 +393,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
 
             // Get initial readings from form
             $initial_water_reading = $_POST['initial_water_reading'] ?? 0;
-            $initial_electricity_reading = $_POST['initial_electricity_reading'] ?? 0;
 
             // Insert new tenant
-            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, move_in_date, id_picture, has_wifi, has_garbage, initial_water_reading, initial_electricity_reading) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $move_in_date, $id_picture, $has_wifi, $has_garbage, $initial_water_reading, $initial_electricity_reading]);
+            $stmt = $pdo->prepare("INSERT INTO tenants (property_id, unit_id, name, id_number, phone_number, secondary_phone_number, move_in_date, id_picture, has_wifi, wifi_fee, has_garbage, initial_water_reading) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$property_id, $unit_id, $name, $id_number, $phone_number, $secondary_phone_number, $move_in_date, $id_picture, $has_wifi, $wifi_fee, $has_garbage, $initial_water_reading]);
             $tenant_id = $pdo->lastInsertId();
 
             // Auto-bill this new tenant for the current billing cycle when applicable.
@@ -1071,7 +1080,7 @@ $success = "Tenant added successfully!";
                                             </span>
                                         </td>
                                         <td>
-                                            <button class="action-btn btn-edit" onclick="openEditModal(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>', '<?php echo htmlspecialchars($tenant['id_number']); ?>', '<?php echo htmlspecialchars($tenant['phone_number']); ?>', '<?php echo htmlspecialchars($tenant['unit_number']); ?>', '<?php echo htmlspecialchars($tenant['property_name']); ?>', '<?php echo $tenant['has_wifi']; ?>', '<?php echo $tenant['has_garbage']; ?>', '<?php echo $tenant['initial_water_reading']; ?>', '<?php echo $tenant['initial_electricity_reading']; ?>')"><i class="fas fa-edit"></i></button>
+                                            <button class="action-btn btn-edit" onclick="openEditModal(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>', '<?php echo htmlspecialchars($tenant['id_number']); ?>', '<?php echo htmlspecialchars($tenant['phone_number']); ?>', '<?php echo htmlspecialchars($tenant['secondary_phone_number'] ?? ''); ?>', '<?php echo htmlspecialchars($tenant['unit_number']); ?>', '<?php echo htmlspecialchars($tenant['property_name']); ?>', '<?php echo $tenant['has_wifi']; ?>', '<?php echo $tenant['wifi_fee']; ?>', '<?php echo $tenant['has_garbage']; ?>', '<?php echo $tenant['initial_water_reading']; ?>')"><i class="fas fa-edit"></i></button>
                                             <?php if ($is_active_tenant): ?>
                                             <button class="action-btn btn-delete" onclick="confirmDelete(<?php echo $tenant['id']; ?>, '<?php echo htmlspecialchars($tenant['name']); ?>')"><i class="fas fa-sign-out-alt"></i></button>
                                             <?php else: ?>
@@ -1112,7 +1121,7 @@ $success = "Tenant added successfully!";
                     
                     <div class="form-group">
                         <label class="form-label">ID Number</label>
-                        <input type="text" class="form-control" name="id_number" required placeholder="e.g. 12345678">
+                        <input type="text" class="form-control" name="id_number" required placeholder="e.g. 12345678" autocomplete="off">
                     </div>
                     
                     <div style="display: flex; gap: 15px;">
@@ -1144,15 +1153,28 @@ $success = "Tenant added successfully!";
                         <input type="number" step="0.01" min="0" class="form-control" name="custom_rent_amount" id="customRentAmount" required placeholder="Select a unit to preload rent">
                     </div>
                     
-                    <div class="form-group">
-                        <label class="form-label">Phone Number</label>
-                        <input type="tel" class="form-control" name="phone_number" required placeholder="e.g. 0712345678">
+                    <div style="display: flex; gap: 15px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Phone Number</label>
+                            <input type="tel" class="form-control" name="phone_number" required placeholder="e.g. 0712345678">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Secondary Phone (Optional)</label>
+                            <input type="tel" class="form-control" name="secondary_phone_number" placeholder="e.g. 0787654321">
+                        </div>
                     </div>
 
-                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
-                            <input type="checkbox" name="has_wifi" checked style="width: 18px; height: 18px;"> Enable WiFi billing
+                    <div style="display: flex; gap: 20px; margin-bottom: 20px; align-items: center;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; margin-bottom: 0;">
+                            <input type="checkbox" name="has_wifi" id="hasWifiBill" checked style="width: 18px; height: 18px;"> Enable WiFi
                         </label>
+                        <div id="wifiFeeContainer" style="display: flex; align-items: center; gap: 10px;">
+                            <label style="font-size: 14px; white-space: nowrap;">WiFi Fee (KES):</label>
+                            <input type="number" step="0.01" name="wifi_fee" class="form-control" style="width: 120px; padding: 8px;" placeholder="0.00" value="0">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px;">
                         <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
                             <input type="checkbox" name="has_garbage" checked style="width: 18px; height: 18px;"> Enable Garbage billing
                         </label>
@@ -1172,11 +1194,6 @@ $success = "Tenant added successfully!";
                         <div class="form-group" style="flex: 1;">
                             <label class="form-label">Initial Water Reading</label>
                             <input type="number" step="0.01" class="form-control" name="initial_water_reading" placeholder="e.g. 123.45" value="0">
-                        </div>
-
-                        <div class="form-group" style="flex: 1;">
-                            <label class="form-label">Initial Electricity Reading</label>
-                            <input type="number" step="0.01" class="form-control" name="initial_electricity_reading" placeholder="e.g. 456.78" value="0">
                         </div>
                     </div>
                 </div>
@@ -1208,15 +1225,28 @@ $success = "Tenant added successfully!";
                         <input type="text" class="form-control" name="edit_id_number" id="editIdNumber" required>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Phone Number</label>
-                        <input type="tel" class="form-control" name="edit_phone_number" id="editPhoneNumber" required>
+                    <div style="display: flex; gap: 15px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Phone Number</label>
+                            <input type="tel" class="form-control" name="edit_phone_number" id="editPhoneNumber" required>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Secondary Phone</label>
+                            <input type="tel" class="form-control" name="edit_secondary_phone_number" id="editSecondaryPhoneNumber">
+                        </div>
                     </div>
 
-                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
-                            <input type="checkbox" name="edit_has_wifi" id="editHasWifi" style="width: 18px; height: 18px;"> Enable WiFi billing
+                    <div style="display: flex; gap: 20px; margin-bottom: 20px; align-items: center;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; margin-bottom: 0;">
+                            <input type="checkbox" name="edit_has_wifi" id="editHasWifi" style="width: 18px; height: 18px;"> Enable WiFi
                         </label>
+                        <div id="editWifiFeeContainer" style="display: flex; align-items: center; gap: 10px;">
+                            <label style="font-size: 14px; white-space: nowrap;">WiFi Fee (KES):</label>
+                            <input type="number" step="0.01" name="edit_wifi_fee" id="editWifiFee" class="form-control" style="width: 120px; padding: 8px;">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px;">
                         <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
                             <input type="checkbox" name="edit_has_garbage" id="editHasGarbage" style="width: 18px; height: 18px;"> Enable Garbage billing
                         </label>
@@ -1226,11 +1256,6 @@ $success = "Tenant added successfully!";
                         <div class="form-group" style="flex: 1;">
                             <label class="form-label">Initial Water Reading</label>
                             <input type="number" step="0.01" class="form-control" name="edit_initial_water_reading" id="editInitialWaterReading">
-                        </div>
-
-                        <div class="form-group" style="flex: 1;">
-                            <label class="form-label">Initial Electricity Reading</label>
-                            <input type="number" step="0.01" class="form-control" name="edit_initial_electricity_reading" id="editInitialElectricityReading">
                         </div>
                     </div>
                 </div>
@@ -1319,15 +1344,20 @@ $success = "Tenant added successfully!";
         });
 
         // Edit tenant modal functionality
-        function openEditModal(tenantId, name, idNumber, phoneNumber, unitNumber, propertyName, hasWifi, hasGarbage, initialWaterReading, initialElectricityReading) {
+        function openEditModal(tenantId, name, idNumber, phoneNumber, secondaryPhone, unitNumber, propertyName, hasWifi, wifiFee, hasGarbage, initialWaterReading) {
             document.getElementById('editTenantId').value = tenantId;
             document.getElementById('editName').value = name;
             document.getElementById('editIdNumber').value = idNumber;
             document.getElementById('editPhoneNumber').value = phoneNumber;
+            document.getElementById('editSecondaryPhoneNumber').value = secondaryPhone || '';
             document.getElementById('editHasWifi').checked = hasWifi == '1';
+            document.getElementById('editWifiFee').value = wifiFee || 0;
             document.getElementById('editHasGarbage').checked = hasGarbage == '1';
             document.getElementById('editInitialWaterReading').value = initialWaterReading || 0;
-            document.getElementById('editInitialElectricityReading').value = initialElectricityReading || 0;
+            
+            // Toggle containers
+            document.getElementById('editWifiFeeContainer').style.visibility = hasWifi == '1' ? 'visible' : 'hidden';
+            
             editTenantModal.style.display = 'flex';
         }
 
@@ -1390,6 +1420,20 @@ $success = "Tenant added successfully!";
         });
 
         unitSelect.addEventListener('change', syncSelectedUnitRent);
+
+        // WiFi fee toggling
+        const hasWifiBill = document.getElementById('hasWifiBill');
+        const wifiFeeContainer = document.getElementById('wifiFeeContainer');
+        const editHasWifi = document.getElementById('editHasWifi');
+        const editWifiFeeContainer = document.getElementById('editWifiFeeContainer');
+
+        hasWifiBill.addEventListener('change', function() {
+            wifiFeeContainer.style.visibility = this.checked ? 'visible' : 'hidden';
+        });
+
+        editHasWifi.addEventListener('change', function() {
+            editWifiFeeContainer.style.visibility = this.checked ? 'visible' : 'hidden';
+        });
 
         // Close modal when clicking outside
         tenantModal.addEventListener('click', (e) => {
