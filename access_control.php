@@ -1,7 +1,7 @@
 <?php
-session_start();
-require_once 'session_check.php';
 require_once 'db_config.php';
+require_once 'session_check.php';
+require_once 'sanitize.php';
 
 requireLogin();
 
@@ -58,11 +58,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error_message = "Invalid property selected.";
     }
 }
-
 // Fetch existing accounts
-$inClause = implode(',', $property_ids);
-$gate_staff = $pdo->query("SELECT g.*, p.name as property_name FROM gate_personnel g JOIN properties p ON g.property_id = p.id WHERE g.property_id IN ($inClause)")->fetchAll();
-$caretakers = $pdo->query("SELECT c.*, p.name as property_name FROM caretakers c JOIN properties p ON c.property_id = p.id WHERE c.property_id IN ($inClause)")->fetchAll();
+$placeholders = implode(',', array_fill(0, count($property_ids), '?'));
+$gate_stmt = $pdo->prepare("SELECT g.*, p.name as property_name FROM gate_personnel g JOIN properties p ON g.property_id = p.id WHERE g.property_id IN ($placeholders)");
+$gate_stmt->execute($property_ids);
+$gate_staff = $gate_stmt->fetchAll();
+
+$caretaker_stmt = $pdo->prepare("SELECT c.*, p.name as property_name FROM caretakers c JOIN properties p ON c.property_id = p.id WHERE c.property_id IN ($placeholders)");
+$caretaker_stmt->execute($property_ids);
+$caretakers = $caretaker_stmt->fetchAll();
 
 ?>
 <!DOCTYPE html>
@@ -99,14 +103,15 @@ $caretakers = $pdo->query("SELECT c.*, p.name as property_name FROM caretakers c
             <p style="color: var(--gray);">provision permanent accounts for your property staff.</p>
         </header>
 
-        <?php if ($success_message): ?><div class="alert alert-success"><?php echo $success_message; ?></div><?php endif; ?>
-        <?php if ($error_message): ?><div class="alert alert-error"><?php echo $error_message; ?></div><?php endif; ?>
+        <?php if ($success_message): ?><div class="alert alert-success"><?php echo esc($success_message); ?></div><?php endif; ?>
+        <?php if ($error_message): ?><div class="alert alert-error"><?php echo esc($error_message); ?></div><?php endif; ?>
 
         <div class="grid">
             <!-- Add Personnel -->
             <div class="card">
                 <h3><i class="fas fa-user-plus"></i> Create New Account</h3>
                 <form method="POST" style="margin-top: 20px;">
+<?php echo get_csrf_token_field(); ?>
                     <input type="hidden" name="action" value="create">
                     <label style="font-size: 12px; font-weight: 600;">Staff Type</label>
                     <select name="type" class="form-control" required>
@@ -117,7 +122,7 @@ $caretakers = $pdo->query("SELECT c.*, p.name as property_name FROM caretakers c
                     <label style="font-size: 12px; font-weight: 600;">Assign to Property</label>
                     <select name="property_id" class="form-control" required>
                         <?php foreach ($properties as $p): ?>
-                            <option value="<?php echo $p['id']; ?>"><?php echo htmlspecialchars($p['name']); ?></option>
+                            <option value="<?php echo esc($p['id']); ?>"><?php echo esc($p['name']); ?></option>
                         <?php endforeach; ?>
                     </select>
 
@@ -158,13 +163,14 @@ $caretakers = $pdo->query("SELECT c.*, p.name as property_name FROM caretakers c
                     <?php foreach ($gate_staff as $g): ?>
                         <tr>
                             <td><span class="badge badge-gate">Gate Personnel</span></td>
-                            <td><?php echo htmlspecialchars($g['full_name']); ?></td>
-                            <td><code><?php echo htmlspecialchars($g['username']); ?></code></td>
-                            <td><?php echo htmlspecialchars($g['property_name']); ?></td>
+                            <td><?php echo esc($g['full_name']); ?></td>
+                            <td><code><?php echo esc($g['username']); ?></code></td>
+                            <td><?php echo esc($g['property_name']); ?></td>
                             <td>
                                 <div style="display:flex; gap:10px;">
                                     <button class="btn btn-sm btn-info" onclick="copyLink('gate', '<?php echo $g['username']; ?>')">Copy Link</button>
                                     <form method="POST" onsubmit="return confirm('Delete this account?');" style="margin:0;">
+<?php echo get_csrf_token_field(); ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="type" value="gate">
                                         <input type="hidden" name="property_id" value="<?php echo (int)$g['property_id']; ?>">
@@ -178,13 +184,14 @@ $caretakers = $pdo->query("SELECT c.*, p.name as property_name FROM caretakers c
                     <?php foreach ($caretakers as $c): ?>
                         <tr>
                             <td><span class="badge badge-caretaker">Caretaker</span></td>
-                            <td><?php echo htmlspecialchars($c['full_name']); ?></td>
-                            <td><code><?php echo htmlspecialchars($c['username']); ?></code></td>
-                            <td><?php echo htmlspecialchars($c['property_name']); ?></td>
+                            <td><?php echo esc($c['full_name']); ?></td>
+                            <td><code><?php echo esc($c['username']); ?></code></td>
+                            <td><?php echo esc($c['property_name']); ?></td>
                             <td>
                                 <div style="display:flex; gap:10px;">
                                     <button class="btn btn-sm btn-info" onclick="copyLink('caretaker', '<?php echo $c['username']; ?>')">Copy Link</button>
                                     <form method="POST" onsubmit="return confirm('Delete this account?');" style="margin:0;">
+<?php echo get_csrf_token_field(); ?>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="type" value="caretaker">
                                         <input type="hidden" name="property_id" value="<?php echo (int)$c['property_id']; ?>">
@@ -211,4 +218,3 @@ $caretakers = $pdo->query("SELECT c.*, p.name as property_name FROM caretakers c
     </script>
 </body>
 </html>
-

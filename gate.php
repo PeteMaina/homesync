@@ -1,6 +1,7 @@
 <?php
-session_start();
 require_once 'db_config.php';
+session_start();
+require_once 'sanitize.php';
 require_once 'SmsService.php';
 
 $sms = new SmsService(); // Credentials should be configured in SmsService.php or env
@@ -107,7 +108,7 @@ $units = $stmt->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Portal - <?php echo $property['name']; ?></title>
+    <title>Security Portal - <?php echo esc($property['name']); ?></title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -141,12 +142,13 @@ $units = $stmt->fetchAll();
             </div>
             <div>
                 <h2 style="margin:0; font-size:16px;">Nyumbaflow Security</h2>
-                <p style="margin:0; font-size:12px; opacity:0.7;"><?php echo htmlspecialchars($property['name']); ?></p>
+                <p style="margin:0; font-size:12px; opacity:0.7;"><?php echo esc($property['name']); ?></p>
             </div>
         </div>
         <div style="text-align:right;">
             <span style="font-size:12px; opacity:0.7;">Logging in as: <strong>Gate Officer</strong></span><br>
             <form action="logout.php" method="POST" style="display:inline;">
+<?php echo get_csrf_token_field(); ?>
                 <button type="submit" style="background:none; border:none; color:#fca5a5; font-size:12px; text-decoration:none; font-weight:600; cursor:pointer; padding:0;">Sign Out</button>
             </form>
         </div>
@@ -156,6 +158,7 @@ $units = $stmt->fetchAll();
         <div class="card">
             <h1><i class="fas fa-user-plus"></i> New Visitor Entry</h1>
             <form method="POST" enctype="multipart/form-data">
+<?php echo get_csrf_token_field(); ?>
                 <div class="form-group">
                     <label class="required">Full Name</label>
                     <input type="text" name="v_name" class="form-control" required placeholder="John Doe">
@@ -199,9 +202,9 @@ $units = $stmt->fetchAll();
                     <select name="unit_id" class="form-control" required>
                         <option value="">-- Select House --</option>
                         <?php foreach ($units as $u): ?>
-                            <option value="<?php echo $u['unit_id']; ?>">
-                                <?php echo htmlspecialchars($u['unit_number']); ?> 
-                                <?php echo $u['tenant_name'] ? '(' . htmlspecialchars($u['tenant_name']) . ')' : '(Vacant)'; ?>
+                            <option value="<?php echo esc($u['unit_id']); ?>">
+                                <?php echo esc($u['unit_number']); ?> 
+                                <?php echo $u['tenant_name'] ? '(' . esc($u['tenant_name']) . ')' : '(Vacant)'; ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -222,18 +225,15 @@ $units = $stmt->fetchAll();
             
             <div id="activeList">
                 <?php foreach ($active_visitors as $v): ?>
-                    <div class="visitor-item" data-search="<?php echo strtolower($v['name'] . ' ' . $v['unit_number']); ?>">
+                    <div class="visitor-item" data-search="<?php echo esc(strtolower($v['name'] . ' ' . $v['unit_number'])); ?>">
                         <div>
-                            <h4 style="margin:0; font-size:15px;"><?php echo htmlspecialchars($v['name']); ?></h4>
+                            <h4 style="margin:0; font-size:15px;"><?php echo esc($v['name']); ?></h4>
                             <div style="display:flex; gap:10px; margin-top:5px;">
-                                <span class="badge badge-info">Unit <?php echo htmlspecialchars($v['unit_number']); ?></span>
-                                <span style="font-size:12px; color:#94a3b8;"><i class="far fa-clock"></i> <?php echo date('H:i', strtotime($v['time_in'])); ?></span>
+                                <span class="badge badge-info">Unit <?php echo esc($v['unit_number']); ?></span>
+                                <span style="font-size:12px; color:#94a3b8;"><i class="far fa-clock"></i> <?php echo esc(date('H:i', strtotime($v['time_in']))); ?></span>
                             </div>
                         </div>
                         <form method="POST">
-                            <input type="hidden" name="visitor_id" value="<?php echo $v['id']; ?>">
-                            <button type="submit" name="logout_visitor" class="btn-logout">Check Out</button>
-                        </form>
                     </div>
                 <?php endforeach; ?>
                 <?php if (empty($active_visitors)): ?>

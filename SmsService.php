@@ -7,9 +7,9 @@ class SmsService {
     private $apiUrl = "https://mysms.celcomafrica.com/api/services/sendsms/";
 
     public function __construct($apiKey = null, $partnerId = null, $shortCode = 'HOMESYNC') {
-        // In a real app, these would come from a config or database
-        $this->apiKey = $apiKey;
-        $this->partnerId = $partnerId;
+        // Fallback to constants if not explicitly provided
+        $this->apiKey = $apiKey ?: (defined('SMS_API_KEY') ? SMS_API_KEY : null);
+        $this->partnerId = $partnerId ?: (defined('SMS_PARTNER_ID') ? SMS_PARTNER_ID : null);
         $this->shortCode = $shortCode;
     }
 
@@ -90,14 +90,29 @@ class SmsService {
      * Specialized: Send Payment Confirmation
      */
     public function sendPaymentConfirmation($phone, $name, $amount, $balance, $propertyName) {
-        $msg = "Hello $name, we have received KES " . number_format($amount) . " for your house at $propertyName. Your current balance is KES " . number_format($balance) . ". Thank you.";
+        $msg = "Hello $name, we have received KES " . number_format($amount) . " for your house at $propertyName. Your current balance is KES " . number_format($balance) . ". Thank you. Enjoy your month.";
         $this->shortCode = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $propertyName), 0, 11));
         return $this->sendSms($phone, $msg);
     }
 
     /**
-     * Specialized: Send Bulk Notice
+     * Send Bulk Notice to an array of phone numbers
      */
+    public function sendBulkNotice($phones, $message, $propertyName = null) {
+        if (!is_array($phones)) return false;
+        
+        $shortCode = $propertyName ? strtoupper(substr($propertyName, 0, 10)) : $this->shortCode;
+        $this->shortCode = $shortCode;
+        
+        $successCount = 0;
+        foreach ($phones as $phone) {
+            if ($this->sendSms($phone, $message)) {
+                $successCount++;
+            }
+        }
+        return $successCount > 0;
+    }
+
     /**
      * Send monthly bill summaries to all tenants for a property
      */

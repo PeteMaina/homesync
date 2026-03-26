@@ -1,5 +1,24 @@
 <?php
 require_once 'db_config.php';
+require_once 'config.php';
+
+// 1. BOOTSTRAP_SECRET Gate
+if (!isset($_GET['secret']) || $_GET['secret'] !== BOOTSTRAP_SECRET) {
+    http_response_code(403);
+    die(json_encode(['error' => 'Bootstrap secret required. Please check your configuration.']));
+}
+
+// 2. Re-initialization Guard
+// Check if the users table already exists to prevent accidental destruction
+try {
+    $check = $pdo->query("SHOW TABLES LIKE 'users'")->fetch();
+    if ($check) {
+        http_response_code(400);
+        die(json_encode(['error' => 'Database is already initialized. Initialization aborted to prevent data loss.']));
+    }
+} catch (Exception $e) {
+    // If we can't check tables, it's safer to proceed but log it
+}
 
 try {
     $sql = file_get_contents('database.sql');

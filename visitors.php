@@ -1,9 +1,8 @@
 <?php
-require_once 'session_check.php';
 require_once 'db_config.php';
-
-// Check if user is logged in
+require_once 'session_check.php';
 requireLogin();
+require_once 'sanitize.php';
 
 // Fetch visitors only for the current landlord's properties
 $visitors = [];
@@ -563,7 +562,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
             <!-- Notifications -->
             <?php if (isset($error)): ?>
                 <div class="notification notification-error">
-                    <span><?php echo $error; ?></span>
+                    <span><?php echo esc($error); ?></span>
                     <button class="notification-close">&times;</button>
                 </div>
             <?php endif; ?>
@@ -646,12 +645,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                     <form method="POST" class="filter-form">
                         <div class="filter-group">
                             <label class="filter-label">Date</label>
-                            <input type="date" class="filter-input" name="filter_date" value="<?php echo $_POST['filter_date'] ?? ''; ?>">
+                            <input type="date" class="filter-input" name="filter_date" value="<?php echo esc($_POST['filter_date'] ?? ''); ?>">
                         </div>
                         
                         <div class="filter-group">
                             <label class="filter-label">House Number</label>
-                            <input type="text" class="filter-input" name="filter_house" placeholder="Enter house number" value="<?php echo $_POST['filter_house'] ?? ''; ?>">
+                            <input type="text" class="filter-input" name="filter_house" placeholder="Enter house number" value="<?php echo esc($_POST['filter_house'] ?? ''); ?>">
                         </div>
                         
                         <div class="filter-group">
@@ -679,25 +678,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                         <td>
                                             <div class="visitor-details">
                                                 <div class="visitor-name">
-                                                    <?php echo htmlspecialchars($visitor['name']); ?>
+                                                    <?php echo esc($visitor['name']); ?>
                                                     <?php if ($visitor['visitor_type'] === 'contractor'): ?>
                                                         <span class="badge" style="font-size: 10px; background: #fee2e2; color: #ef4444; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">Contractor</span>
                                                     <?php endif; ?>
                                                 </div>
-                                                <div><?php echo htmlspecialchars($visitor['phone_number']); ?></div>
-                                                <div>ID: <?php echo htmlspecialchars($visitor['id_number']); ?></div>
+                                                <div><?php echo esc($visitor['phone_number']); ?></div>
+                                                <div>ID: <?php echo esc($visitor['id_number']); ?></div>
                                                 <?php if (!empty($visitor['purpose'])): ?>
-                                                    <div style="font-style: italic; font-size: 12px; color: var(--primary);"><i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($visitor['purpose']); ?></div>
+                                                    <div style="font-style: italic; font-size: 12px; color: var(--primary);"><i class="fas fa-info-circle"></i> <?php echo esc($visitor['purpose']); ?></div>
                                                 <?php endif; ?>
                                             </div>
                                         </td>
                                         <td>
                                             <div class="visitor-details">
-                                                <div><strong>Date:</strong> <?php echo date('M j, Y', strtotime($visitor['visit_date'])); ?></div>
-                                                <div><span class="time-in">In:</span> <?php echo date('g:i A', strtotime($visitor['time_in'])); ?></div>
+                                                <div><strong>Date:</strong> <?php echo esc(date('M j, Y', strtotime($visitor['visit_date']))); ?></div>
+                                                <div><span class="time-in">In:</span> <?php echo esc(date('g:i A', strtotime($visitor['time_in']))); ?></div>
                                                 <div>
                                                     <?php if (!empty($visitor['time_out'])): ?>
-                                                        <span class="time-out">Out:</span> <?php echo date('g:i A', strtotime($visitor['time_out'])); ?>
+                                                        <span class="time-out">Out:</span> <?php echo esc(date('g:i A', strtotime($visitor['time_out']))); ?>
                                                     <?php else: ?>
                                                         <span class="time-out">Still in property</span>
                                                     <?php endif; ?>
@@ -706,17 +705,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['filter'])) {
                                         </td>
                                         <td>
                                             <div class="visitor-details">
-                                                <div><strong>House:</strong> <?php echo htmlspecialchars($visitor['tenant_house'] ?? 'N/A'); ?></div>
-                                                <div><strong>Tenant:</strong> <?php echo htmlspecialchars($visitor['tenant_name'] ?? 'N/A'); ?></div>
+                                                <div><strong>House:</strong> <?php echo esc($visitor['tenant_house'] ?? 'N/A'); ?></div>
+                                                <div><strong>Tenant:</strong> <?php echo esc($visitor['tenant_name'] ?? 'N/A'); ?></div>
                                             </div>
                                         </td>
                                         <td>
                                             <div class="visitor-details">
                                                 <?php if (!empty($visitor['number_plate'])): ?>
-                                                    <div><strong>Plate:</strong> <?php echo htmlspecialchars($visitor['number_plate']); ?></div>
+                                                    <div><strong>Plate:</strong> <?php echo esc($visitor['number_plate']); ?></div>
                                                 <?php endif; ?>
                                                 <?php if (!empty($visitor['id_image'])): ?>
-                                                    <div><a href="uploads/visitors/<?php echo $visitor['id_image']; ?>" target="_blank" style="color:var(--primary); font-size:12px;"><i class="fas fa-id-card"></i> View ID Image</a></div>
+                                                    <div><a href="uploads/visitors/<?php echo esc($visitor['id_image']); ?>" target="_blank" style="color:var(--primary); font-size:12px;"><i class="fas fa-id-card"></i> View ID Image</a></div>
                                                 <?php else: ?>
                                                     <div style="font-size:11px; color:var(--gray);">No ID Image captured</div>
                                                 <?php endif; ?>

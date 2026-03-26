@@ -1,17 +1,24 @@
-<?php
-// api/visitors_list.php
-header('Content-Type: application/json; charset=utf-8');
-require __DIR__ . '/../../config.php';
-require __DIR__ . '/../../db_config.php';
+session_start();
+
+// Authentication Check
+if (!isset($_SESSION['personnel_id']) || $_SESSION['personnel_role'] !== 'gate') {
+    http_response_code(401);
+    echo json_encode(['error' => 'Unauthorized access. Please login.']);
+    exit;
+}
+
+$property_id = $_SESSION['personnel_property_id'];
 
 try {
-    $stmt = $pdo->query("
+    $stmt = $pdo->prepare("
         SELECT v.*, t.full_name AS tenant_name
         FROM visitors v
         LEFT JOIN tenants t ON v.tenant_id = t.id
+        WHERE v.property_id = ?
         ORDER BY v.id DESC
         LIMIT 50
     ");
+    $stmt->execute([$property_id]);
     $rows = $stmt->fetchAll();
 
     // Make signature URLs relative so the browser can load them

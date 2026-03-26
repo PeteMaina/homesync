@@ -104,6 +104,10 @@ uploads/
 - [x] No backup/log files in web root
 - [x] Directory listing disabled
 - [x] All SQL queries use prepared statements
+- [x] Bootstrap protection (secret + rate limit + password strength)
+- [x] Universal output escaping (XSS prevention)
+- [x] Strict input validation and parameter casting
+- [x] Centralized sanitization helper (sanitize.php)
 
 ## Additional Recommendations
 
@@ -115,3 +119,41 @@ uploads/
 5. Enable error logging to files (not browser display)
 6. Use environment variables for all secrets
 7. Regular security audits and updates
+## Bootstrap Protection (Feature 10)
+
+### Threat: Account Takeover on Fresh Deploy
+On a fresh deploy with no superadmin in the database, `super_login.php` shows a bootstrap form.
+Without protection, anyone who discovers the URL could create the superadmin and own the system.
+
+### Protections Implemented
+1. **Bootstrap Secret** — A `BOOTSTRAP_SECRET` constant in `config.php` must be set to a unique value before deploying. The bootstrap form requires this secret to submit.
+2. **Default Sentinel Check** — If the secret is still `CHANGE_ME_ON_DEPLOY`, bootstrap is blocked entirely.
+3. **CSRF Protection** — Both bootstrap and login forms include CSRF tokens via `csrf_token.php`.
+4. **Rate Limiting** — Bootstrap attempts are rate-limited to 3 per hour per IP.
+5. **Password Strength** — Superadmin password must be ≥8 characters with uppercase, lowercase, and digit.
+6. **Input Validation** — Username (3-50 alphanumeric), email (valid format), and password are all validated server-side.
+7. **Audit Logging** — Successful bootstrap events are logged with IP and timestamp via `error_log()`.
+
+### Deploy Checklist
+1. Open `config.php` and change `BOOTSTRAP_SECRET` to a unique, secret value
+2. Navigate to `super_login.php` and enter the secret + credentials to bootstrap
+3. After superadmin is created, the bootstrap form disappears permanently (as long as a superadmin exists)
+
+## Input Validation & Output Escaping (Feature 11)
+
+### Threat: Cross-Site Scripting (XSS) & Business Logic Bypass
+Malicious users can submit scripts or manipulate parameters to steal sessions, execute unauthorized code, or bypass property-level isolation.
+
+### Protections Implemented
+1. **Centralized Sanitization** — A new `sanitize.php` provides:
+   - `esc($data)`: Shorthand for `htmlspecialchars($data, ENT_QUOTES, 'UTF-8')`.
+   - `sanitize_string($data)`: Cleans input strings.
+   - `sanitize_int($data)`: Casts and validates integers.
+2. **Universal Output Escaping** — Every dynamic output in the following files now uses `esc()`:
+   - Dashboard & Billing: `index.php`, `super_dashboard.php`, `billing.php`
+   - Registry: `tenants.php`, `visitors.php`, `contractors.php`
+   - Access & Portals: `access_control.php`, `caretaker_portal.php`, `gate.php`, `gate/index2.php`
+   - Auth: `personnel_login.php`, `gate/login.php`
+   - Structure: `sidebar.php`, `notifications.php`, `security.php`, `settings.php`
+3. **Strict Parameter Casting** — GET/POST parameters used as IDs (e.g., `property_id`, `unit_id`, `visitor_id`) are cast to `int` and validated against authorized data.
+4. **Validation Logic** — Critical flows like `onboarding_action.php` and `gate/index2.php` implement strict required-field checks and format validation.

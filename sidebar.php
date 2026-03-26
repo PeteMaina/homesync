@@ -1,5 +1,6 @@
 <?php
 $current_page = basename($_SERVER['PHP_SELF']);
+require_once 'sanitize.php';
 ?>
 <style>
     .sidebar {
@@ -22,7 +23,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
         margin-bottom: 24px;
     }
     
-.sidebar-header h1 {
+    .sidebar-header h1 {
         font-size: 24px;
         font-weight: 700;
         margin-bottom: 4px;
@@ -88,7 +89,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
         font-weight: 600;
     }
 
-.user-info h4 {
+    .user-info h4 {
         font-size: 14px;
         font-weight: 600;
         color: #4361ee;
@@ -151,7 +152,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
 
 <div class="sidebar">
     <div class="sidebar-header">
-<h1><i class="fas fa-home"></i> Nyumbaflow</h1>
+        <h1><i class="fas fa-home"></i> Nyumbaflow</h1>
         <p>Property Management</p>
     </div>
     
@@ -181,7 +182,6 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <span>Visitors</span>
         </a>
         <a href="settings.php" class="nav-item <?php echo $current_page == 'settings.php' ? 'active' : ''; ?>">
-
             <i class="fas fa-cog"></i>
             <span>Settings</span>
         </a>
@@ -189,16 +189,16 @@ $current_page = basename($_SERVER['PHP_SELF']);
     
     <div class="sidebar-footer">
         <div class="user-profile">
-            <div class="user-avatar"><?php echo substr($_SESSION['admin_name'] ?? 'A', 0, 1); ?></div>
+            <div class="user-avatar"><?php echo esc(substr($_SESSION['admin_name'] ?? 'A', 0, 1)); ?></div>
             <div class="user-info">
-                <h4><?php echo $_SESSION['admin_name'] ?? 'Admin'; ?></h4>
+                <h4><?php echo esc($_SESSION['admin_name'] ?? 'Admin'); ?></h4>
                 <p>Landlord</p>
             </div>
         </div>
         <form method="POST" action="logout.php" style="margin-top: 16px;">
+            <?php echo get_csrf_token_field(); ?>
             <button type="submit" class="logout-btn">
-                <i class="fas fa-sign-out-alt" style="margin-right: 8px;"></i>
-                Logout
+                <i class="fas fa-sign-out-alt"></i> Logout
             </button>
         </form>
     </div>

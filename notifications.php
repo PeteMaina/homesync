@@ -1,13 +1,9 @@
 <?php
-session_start();
 require_once 'db_config.php';
+require_once 'session_check.php';
+requireLogin();
+require_once 'sanitize.php';
 require_once 'SmsService.php';
-
-// Check if landlord is logged in
-if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
-    exit();
-}
 
 $landlord_id = $_SESSION['admin_id'];
 $sms = new SmsService();
@@ -22,6 +18,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_bulk'])) {
     $notif_text = $_POST['notif_text'];
 
     try {
+        // IDOR Check: Ensure property belongs to the landlord
+        $propCheck = $pdo->prepare("SELECT id FROM properties WHERE id = ? AND landlord_id = ?");
+        $propCheck->execute([$property_id, $landlord_id]);
+        if (!$propCheck->fetch()) {
+            throw new Exception("Unauthorized property access.");
+        }
+
         // Fetch all active tenants for this property
         $stmt = $pdo->prepare("SELECT phone_number FROM tenants WHERE property_id = ? AND status = 'active'");
         $stmt->execute([$property_id]);
@@ -46,10 +49,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_bulk'])) {
 // Handle Individual SMS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_individual_sms'])) {
     $phone = $_POST['send_individual_sms'];
-    $message = $_POST['individual_message'];
+    $individual_message = $_POST['individual_message'];
 
     try {
-        // Get property name for shortcode
+        // IDOR Check: Ensure tenant belongs to the landlord
         $stmt = $pdo->prepare("
             SELECT p.name as property_name
             FROM tenants t
@@ -60,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_individual_sms']
         $property = $stmt->fetch();
 
         if ($property) {
-            $sms->sendDirectMessage($phone, $message, $property['property_name']);
+            $sms->sendDirectMessage($phone, $individual_message, $property['property_name']);
             $_SESSION['message'] = "Direct message sent successfully!";
             $_SESSION['message_type'] = "success";
         } else {
@@ -158,7 +161,7 @@ $tenants = $stmt->fetchAll();
             </div>
 
             <?php if ($message): ?>
-                <div class="alert alert-<?php echo $message_type; ?>"><?php echo $message; ?></div>
+                <div class="alert alert-<?php echo esc($message_type); ?>"><?php echo esc($message); ?></div>
             <?php endif; ?>
 
             <div class="notif-grid">
@@ -168,11 +171,12 @@ $tenants = $stmt->fetchAll();
                     <p style="font-size: 14px; color: var(--gray); margin-bottom: 20px;">Send a message to all tenants in a selected property.</p>
                     
                     <form method="POST">
+<?php echo get_csrf_token_field(); ?>
                         <div class="form-group">
                             <label>Select Property</label>
                             <select name="property_id" class="form-control" required>
                                 <?php foreach ($properties as $p): ?>
-                                    <option value="<?php echo $p['id']; ?>"><?php echo htmlspecialchars($p['name']); ?></option>
+                                    <option value="<?php echo esc($p['id']); ?>"><?php echo esc($p['name']); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -190,31 +194,28 @@ $tenants = $stmt->fetchAll();
                     <h3><i class="fas fa-user" style="color: var(--success);"></i> Direct Message</h3>
                     <p style="font-size: 14px; color: var(--gray); margin-bottom: 20px;">Send a custom message to a specific tenant.</p>
                     
-                    <form id="individualForm">
+                    <form method="POST">
+<?php echo get_csrf_token_field(); ?>
                         <div class="form-group">
                             <label>Select Tenant</label>
-                            <select id="tenantSelect" class="form-control" required>
+                            <select name="send_individual_sms" class="form-control" required>
                                 <option value="">-- Select Tenant --</option>
                                 <?php foreach ($tenants as $t): ?>
-                                    <option value="<?php echo htmlspecialchars($t['phone_number']); ?>">
-                                        <?php echo htmlspecialchars($t['name']); ?> (<?php echo htmlspecialchars($t['property_name']); ?>)
+                                    <option value="<?php echo esc($t['phone_number']); ?>">
+                                        <?php echo esc($t['name']); ?> (<?php echo esc($t['property_name']); ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="form-group">
                             <label>Message Text</label>
-                            <textarea id="directText" class="form-control" placeholder="e.g. Hi Jane, please call the office regarding your recent request..." required></textarea>
+                            <textarea name="individual_message" class="form-control" placeholder="e.g. Hi Jane, please call the office regarding your recent request..." required></textarea>
                         </div>
-                        <button type="button" class="btn btn-primary" onclick="sendIndividualNotif()">Send Direct SMS</button>
+                        <button type="submit" name="send_direct" class="btn btn-primary">Send Direct SMS</button>
                     </form>
                 </div>
             </div>
         </div>
     </div>
-
-    <script>
-        // Removed old function as we now use form submission
-    </script>
 </body>
 </html>

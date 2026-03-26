@@ -3,7 +3,7 @@ session_start();
 require_once 'db_config.php';
 
 if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
+    header("Location: auth.php");
     exit();
 }
 
@@ -16,6 +16,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $due_date = date('Y-m-d', strtotime('next month 5th'));
     
     try {
+        // IDOR Check: Ensure tenant belongs to the landlord
+        $authCheck = $pdo->prepare("SELECT t.id FROM tenants t JOIN properties p ON t.property_id = p.id WHERE t.id = ? AND p.landlord_id = ?");
+        $authCheck->execute([$tenant_id, $_SESSION['admin_id']]);
+        if (!$authCheck->fetch()) {
+            die("Unauthorized tenant access.");
+        }
+
         // Find the unit_id for this tenant
         $stmt = $pdo->prepare("SELECT unit_id FROM tenants WHERE id = ?");
         $stmt->execute([$tenant_id]);

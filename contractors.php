@@ -1,11 +1,8 @@
 <?php
-session_start();
 require_once 'db_config.php';
-
-if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
-    exit();
-}
+require_once 'session_check.php';
+requireLogin();
+require_once 'sanitize.php';
 
 $landlord_id = $_SESSION['admin_id'];
 
@@ -71,6 +68,27 @@ $contractors = $stmt->fetchAll();
             </div>
 
         <form method="POST" style="background: #f8fafc; padding: 20px; border-radius: 10px; margin-bottom: 30px; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 15px; align-items: end;">
+<?php echo get_csrf_token_field(); ?>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-size: 13px;">Name</label>
+                <input type="text" name="name" required style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 5px;">
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-size: 13px;">Category</label>
+                <select name="category" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 5px;">
+                    <option>Plumber</option>
+                    <option>Electrician</option>
+                    <option>Carpenter</option>
+                    <option>Security</option>
+                    <option>Cleaner</option>
+                    <option>Other</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-size: 13px;">Phone</label>
+                <input type="tel" name="phone" required style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 5px;">
+            </div>
+<?php echo get_csrf_token_field(); ?>
             <div>
                 <label style="display: block; margin-bottom: 5px; font-size: 13px;">Name</label>
                 <input type="text" name="name" required style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 5px;">
@@ -105,11 +123,11 @@ $contractors = $stmt->fetchAll();
             <tbody>
                 <?php foreach ($contractors as $c): ?>
                     <tr>
-                        <td><strong><?php echo $c['name']; ?></strong></td>
-                        <td><span class="badge"><?php echo $c['category']; ?></span></td>
-                        <td><?php echo $c['phone_number']; ?></td>
+                        <td><strong><?php echo esc($c['name']); ?></strong></td>
+                        <td><span class="badge"><?php echo esc($c['category']); ?></span></td>
+                        <td><?php echo esc($c['phone_number']); ?></td>
                         <td>
-                            <a href="tel:<?php echo $c['phone_number']; ?>" style="color: #4361ee;"><i class="fas fa-phone"></i></a>
+                            <a href="tel:<?php echo esc($c['phone_number']); ?>" style="color: #4361ee;"><i class="fas fa-phone"></i></a>
                         </td>
                     </tr>
                 <?php endforeach; ?>

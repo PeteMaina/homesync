@@ -3,6 +3,18 @@
 header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../../config.php';
 require __DIR__ . '/../../db_config.php';
+require __DIR__ . '/../../SmsService.php';
+
+session_start();
+
+// Authentication Check
+if (!isset($_SESSION['personnel_id']) || $_SESSION['personnel_role'] !== 'gate') {
+    http_response_code(401);
+    echo json_encode(['error' => 'Unauthorized access. Please login.']);
+    exit;
+}
+
+$assigned_property_id = $_SESSION['personnel_property_id'];
 
 $raw = file_get_contents('php://input');
 $data = json_decode($raw, true);
@@ -59,22 +71,22 @@ try {
     // Column may already exist
 }
 
-// Get property_id and tenant_id from the unit
+// Get property_id and tenant_id from the unit - also verify unit belongs to this personnel's property
 $property_id = null;
 $tenant_id = null;
 try {
     $stmt = $pdo->prepare("SELECT u.property_id, t.id as tenant_id 
                            FROM units u 
                            LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active' 
-                           WHERE u.id = ?");
-    $stmt->execute([$unit_id]);
+                           WHERE u.id = ? AND u.property_id = ?");
+    $stmt->execute([$unit_id, $assigned_property_id]);
     $row = $stmt->fetch();
     if ($row) {
         $property_id = $row['property_id'];
         $tenant_id = $row['tenant_id']; // May be NULL if unit is vacant
     } else {
-        http_response_code(404);
-        echo json_encode(['error' => 'Unit not found.']);
+        http_response_code(403);
+        echo json_encode(['error' => 'Unit not found or access denied for this property.']);
         exit;
     }
 } catch (Exception $e) {
@@ -153,6 +165,33 @@ try {
             }
         }
     }
+    
+    // --- SMS Notification Logic ---
+    if ($tenant_id) {
+        $tStmt = $pdo->prepare("SELECT phone_number, secondary_phone_number FROM tenants WHERE id = ?");
+        $tStmt->execute([$tenant_id]);
+        $tData = $tStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($tData) {
+            $pStmt = $pdo->prepare("SELECT name FROM properties WHERE id = ?");
+            $pStmt->execute([$property_id]);
+            $propName = $pStmt->fetchColumn();
+
+            $sms = new SmsService();
+            $msg = "A visitor named {$full_name} has arrived at the gate for you.";
+            if ($plate) {
+                $msg .= " Vehicle: {$plate}.";
+            }
+
+            if (!empty($tData['phone_number'])) {
+                $sms->sendDirectMessage($tData['phone_number'], $msg, $propName);
+            }
+            if (!empty($tData['secondary_phone_number'])) {
+                $sms->sendDirectMessage($tData['secondary_phone_number'], $msg, $propName);
+            }
+        }
+    }
+    // ------------------------------
     
     echo json_encode(['success' => true, 'id' => (int)$lastId]);
     exit;

@@ -1,9 +1,13 @@
 <?php
-require_once 'session_check.php';
 require_once 'db_config.php';
+require_once 'session_check.php';
+requireLogin();
+require_once 'sanitize.php';
 
 // Check if user is logged in
-requireLogin();
+$landlord_id = $_SESSION['admin_id'];
+$success_message = '';
+$error_message = '';
 
 function settingsTableExists($pdo, $table_name) {
     try {
@@ -14,11 +18,6 @@ function settingsTableExists($pdo, $table_name) {
         return false;
     }
 }
-
-// Fetch properties to show in management
-$landlord_id = $_SESSION['admin_id'];
-$success_message = '';
-$error_message = '';
 
 // Handle apartment/property deletion
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_property'])) {
@@ -171,12 +170,12 @@ $properties = $stmt->fetchAll();
 
             <?php if ($success_message): ?>
                 <div style="padding: 12px 14px; border-radius: 10px; background: #dcfce7; color: #166534; margin-bottom: 20px;">
-                    <?php echo htmlspecialchars($success_message); ?>
+                    <?php echo esc($success_message); ?>
                 </div>
             <?php endif; ?>
             <?php if ($error_message): ?>
                 <div style="padding: 12px 14px; border-radius: 10px; background: #fee2e2; color: #991b1b; margin-bottom: 20px;">
-                    <?php echo htmlspecialchars($error_message); ?>
+                    <?php echo esc($error_message); ?>
                 </div>
             <?php endif; ?>
 
@@ -190,10 +189,11 @@ $properties = $stmt->fetchAll();
                             <?php foreach ($properties as $p): ?>
                                 <div class="property-item">
                                     <div>
-                                        <span><strong><?php echo htmlspecialchars($p['name']); ?></strong></span><br>
-                                        <small><?php echo htmlspecialchars($p['location']); ?></small>
+                                        <span><strong><?php echo esc($p['name']); ?></strong></span><br>
+                                        <small><?php echo esc($p['location']); ?></small>
                                     </div>
                                     <form method="POST" onsubmit="return confirm('Delete apartment <?php echo htmlspecialchars(addslashes($p['name']), ENT_QUOTES); ?> and all mapped data? This cannot be undone.');">
+                                        <?php echo get_csrf_token_field(); ?>
                                         <input type="hidden" name="property_id" value="<?php echo (int)$p['id']; ?>">
                                         <button type="submit" name="delete_property" class="btn btn-danger" style="padding: 8px 12px; font-size: 12px;">Delete</button>
                                     </form>
@@ -211,6 +211,7 @@ $properties = $stmt->fetchAll();
                     <h3><i class="fas fa-tint"></i> Utility Rates</h3>
                     <p>Update water, wifi, and garbage rates. Changes can be automatically broadcast to tenants.</p>
                     <form action="update_rates.php" method="POST">
+<?php echo get_csrf_token_field(); ?>
                         <div style="display: flex; flex-direction: column; gap: 10px;">
                             <label style="font-size: 12px; font-weight: 600;">Default Water Rate (KES)</label>
                             <input type="number" name="water_rate" class="form-control" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;" placeholder="200">

@@ -1,11 +1,32 @@
 <?php
+// Session Security Configurations
+ini_set('session.use_only_cookies', 1);
+ini_set('session.use_strict_mode', 1);
+
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'secure' => isset($_SERVER['HTTPS']),
+    'httponly' => true,
+    'samesite' => 'Strict'
+]);
+
 session_start();
 require_once '../db_config.php';
+require_once '../sanitize.php';
+require_once '../rate_limit.php';
 
 $error = '';
 
 // If already logged in, redirect to gate dashboard
 if (isset($_SESSION['security_id'])) {
+    // Protection against Session Hijacking
+    if (isset($_SESSION['user_agent']) && $_SESSION['user_agent'] !== $_SERVER['HTTP_USER_AGENT']) {
+        session_unset();
+        session_destroy();
+        header("Location: login.php");
+        exit();
+    }
     header("Location: index2.php");
     exit();
 }
@@ -17,6 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if (empty($username) || empty($password)) {
         $error = 'Username and password are required.';
+    } else if (!check_rate_limit('gate_login', 5, 15)) {
+        $error = 'Too many failed login attempts. Please try again after 15 minutes.';
     } else {
         try {
             $stmt = $pdo->prepare("SELECT * FROM gate_personnel WHERE username = ?");
@@ -24,15 +47,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $personnel = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($personnel && password_verify($password, $personnel['password'])) {
+                clear_attempts('gate_login');
+                session_regenerate_id(true); // Prevent session fixation
+                
                 // Login successful
                 $_SESSION['security_id'] = $personnel['id'];
                 $_SESSION['security_name'] = $personnel['full_name'];
                 $_SESSION['property_id'] = $personnel['property_id'];
                 $_SESSION['last_activity'] = time();
+                $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
                 
                 header("Location: index2.php");
                 exit();
             } else {
+                record_failed_attempt('gate_login');
                 $error = 'Invalid username or password.';
             }
         } catch (PDOException $e) {
@@ -190,16 +218,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         <?php if (!empty($error)): ?>
             <div class="error-message">
-                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+                <i class="fas fa-exclamation-circle"></i> <?php echo esc($error); ?>
             </div>
         <?php endif; ?>
         
         <form method="POST">
+            <?php echo get_csrf_token_field(); ?>
             <div class="form-group">
                 <label for="username" class="form-label">Username</label>
                 <input type="text" id="username" name="username" class="form-control" 
                        placeholder="Enter your username" required autofocus 
-                       value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>">
+                       value="<?php echo esc($_POST['username'] ?? ''); ?>">
             </div>
             
             <div class="form-group">

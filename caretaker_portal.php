@@ -1,6 +1,7 @@
 <?php
-session_start();
 require_once 'db_config.php';
+session_start();
+require_once 'sanitize.php';
 
 if (!isset($_SESSION['personnel_id']) || $_SESSION['personnel_role'] !== 'caretaker') {
     header("Location: personnel_login.php");
@@ -18,7 +19,6 @@ $message_type = "";
 $stmt = $pdo->prepare("SELECT * FROM properties WHERE id = ?");
 $stmt->execute([$property_id]);
 $property = $stmt->fetch();
-
 
 // Fetch Units
 $stmt = $pdo->prepare("SELECT * FROM units WHERE property_id = ? ORDER BY unit_number ASC");
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_reading'])) {
         $existing_bill_id = $stmt->fetchColumn();
 
         $units_consumed = max(0, $reading - $prev_reading);
-        // Get water rate from the unit, not the property
+        // Get water rate from the unit
         $rateStmt = $pdo->prepare("SELECT water_rate FROM units WHERE id = ?");
         $rateStmt->execute([$unit_id]);
         $rate = $rateStmt->fetchColumn() ?: 100; // Default rate
@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_reading'])) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Caretaker Portal - <?php echo htmlspecialchars($property['name']); ?></title>
+    <title>Caretaker Portal - <?php echo esc($property['name']); ?></title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -112,12 +112,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_reading'])) {
             </div>
             <div>
                 <h2 style="margin:0; font-size:16px;">Nyumbaflow Caretaker</h2>
-                <p style="margin:0; font-size:12px; opacity:0.7;"><?php echo htmlspecialchars($property['name']); ?></p>
+                <p style="margin:0; font-size:12px; opacity:0.7;"><?php echo esc($property['name']); ?></p>
             </div>
         </div>
         <div style="text-align:right;">
-            <span style="font-size:12px; opacity:0.7;">Logged in as: <strong><?php echo htmlspecialchars($caretaker_name); ?></strong></span><br>
+            <span style="font-size:12px; opacity:0.7;">Logged in as: <strong><?php echo esc($caretaker_name); ?></strong></span><br>
             <form action="logout.php" method="POST" style="display:inline;">
+<?php echo get_csrf_token_field(); ?>
                 <button type="submit" style="background:none; border:none; color:#fca5a5; font-size:12px; text-decoration:none; font-weight:600; cursor:pointer; padding:0;">Sign Out</button>
             </form>
         </div>
@@ -129,16 +130,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_reading'])) {
             <p style="color: #64748b;">Record current usage for all units. Automated billing will be calculated.</p>
         </header>
 
-
         <?php if ($message): ?>
-            <div class="alert alert-<?php echo $message_type; ?>"><?php echo $message; ?></div>
+            <div class="alert alert-<?php echo esc($message_type); ?>"><?php echo esc($message); ?></div>
         <?php endif; ?>
 
         <div class="unit-grid">
             <?php foreach ($units as $unit): ?>
                 <div class="unit-card">
-                    <h3 style="margin:0 0 10px 0;">Unit <?php echo htmlspecialchars($unit['unit_number']); ?></h3>
+                    <h3 style="margin:0 0 10px 0;">Unit <?php echo esc($unit['unit_number']); ?></h3>
                     <form method="POST">
+<?php echo get_csrf_token_field(); ?>
                         <input type="hidden" name="unit_id" value="<?php echo $unit['id']; ?>">
                         <input type="hidden" name="unit_number" value="<?php echo $unit['unit_number']; ?>">
                         <div class="form-group">

@@ -4,7 +4,7 @@ require_once 'db_config.php';
 require_once 'SmsService.php';
 
 if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
+    header("Location: auth.php");
     exit();
 }
 

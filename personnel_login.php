@@ -1,6 +1,12 @@
 <?php
-session_start();
 require_once 'db_config.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+require_once 'sanitize.php';
+require_once 'csrf_token.php';
+require_once 'rate_limit.php';
 
 $error = "";
 
@@ -9,29 +15,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'];
     $role = $_POST['role']; // 'gate' or 'caretaker'
 
-    if ($role === 'gate') {
-        $stmt = $pdo->prepare("SELECT * FROM gate_personnel WHERE username = ?");
+    if (!check_rate_limit('personnel_login', 5, 15)) {
+        $error = "Too many failed login attempts. Please try again after 15 minutes.";
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM caretakers WHERE username = ?");
-    }
-    
-    $stmt->execute([$username]);
-    $user = $stmt->fetch();
-
-    if ($user && password_verify($password, $user['password'])) {
-        $_SESSION['personnel_id'] = $user['id'];
-        $_SESSION['personnel_name'] = $user['full_name'];
-        $_SESSION['personnel_role'] = $role;
-        $_SESSION['personnel_property_id'] = $user['property_id'];
-        
         if ($role === 'gate') {
-            header("Location: gate.php");
+            $stmt = $pdo->prepare("SELECT * FROM gate_personnel WHERE username = ?");
         } else {
-            header("Location: caretaker_portal.php");
+            $stmt = $pdo->prepare("SELECT * FROM caretakers WHERE username = ?");
         }
-        exit();
-    } else {
-        $error = "Invalid username or password.";
+        
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
+
+        if ($user && password_verify($password, $user['password'])) {
+            clear_attempts('personnel_login');
+            session_regenerate_id(true);
+            
+            $_SESSION['personnel_id'] = $user['id'];
+            $_SESSION['personnel_name'] = $user['full_name'];
+            $_SESSION['personnel_role'] = $role;
+            $_SESSION['personnel_property_id'] = $user['property_id'];
+            $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
+            
+            if ($role === 'gate') {
+                header("Location: auth.php");
+            } else {
+                header("Location: caretaker_portal.php");
+            }
+            exit();
+        } else {
+            record_failed_attempt('personnel_login');
+            $error = "Invalid username or password.";
+        }
     }
 }
 ?>
@@ -59,10 +74,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <p style="text-align:center; color:#94a3b8; margin-bottom:20px;">Personnel Portal</p>
         
         <?php if ($error): ?>
-            <div class="error"><?php echo $error; ?></div>
+            <div class="error"><?php echo esc($error); ?></div>
         <?php endif; ?>
 
         <form method="POST">
+            <?php echo get_csrf_token_field(); ?>
             <div class="form-group">
                 <label>Login As</label>
                 <select name="role" required>

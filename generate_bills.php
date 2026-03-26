@@ -3,13 +3,20 @@ session_start();
 require_once 'db_config.php';
 
 if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
+    header("Location: auth.php");
     exit();
 }
 
 $property_id = $_GET['property_id'] ?? null;
 if (!$property_id) {
     die("Property ID required.");
+}
+
+// IDOR Check: Ensure property belongs to the landlord
+$stmt = $pdo->prepare("SELECT id FROM properties WHERE id = ? AND landlord_id = ?");
+$stmt->execute([$property_id, $_SESSION['admin_id']]);
+if (!$stmt->fetch()) {
+    die("Unauthorized property access.");
 }
 
 // Simple generation logic for the current month
@@ -116,11 +123,19 @@ try {
     $pdo->commit();
     $_SESSION['message'] = "Bills for $month $year generated successfully!";
     $_SESSION['message_type'] = "success";
+
+    // Trigger Bulk SMS for rent reminders
+    require_once 'SmsService.php';
+    $sms = new SmsService();
+    $sms->sendMonthlyBills($pdo, $property_id, $month, $year);
+
     header("Location: index.php?property_id=$property_id");
     exit();
 
 } catch (Exception $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     die("Error generating bills: " . $e->getMessage());
 }
 ?>

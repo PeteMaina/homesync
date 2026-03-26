@@ -1,6 +1,7 @@
 <?php
-session_start();
 require_once 'db_config.php';
+session_start();
+require_once 'sanitize.php';
 
 if (!isset($_SESSION['superadmin_id'])) {
     header("Location: super_login.php");
@@ -97,7 +98,7 @@ $landlords = $pdo->query("
             <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px;">
                 <i class="fas fa-chart-line"></i> Dashboard
             </div>
-            <p style="margin-top: 50px; opacity: 0.5; font-size: 12px;">Logged in as: <?php echo $_SESSION['superadmin_name']; ?></p>
+            <p style="margin-top: 50px; opacity: 0.5; font-size: 12px;">Logged in as: <?php echo esc($_SESSION['superadmin_name']); ?></p>
             <a href="logout.php" style="color: #94a3b8; text-decoration: none; font-size: 13px; display: block; margin-top: 10px;">Logout</a>
         </nav>
     </div>
@@ -107,7 +108,7 @@ $landlords = $pdo->query("
         </header>
 
         <?php if ($message): ?>
-            <div class="alert alert-<?php echo $message_type; ?>"><?php echo $message; ?></div>
+            <div class="alert alert-<?php echo esc($message_type); ?>"><?php echo esc($message); ?></div>
         <?php endif; ?>
 
         <div class="stats-grid">
@@ -148,6 +149,7 @@ $landlords = $pdo->query("
                             <td><?php echo date('M j, Y', strtotime($l['created_at'])); ?></td>
                             <td>
                                 <form method="POST" style="display:inline;" onsubmit="return confirm('Change status?')">
+<?php echo get_csrf_token_field(); ?>
                                     <input type="hidden" name="landlord_id" value="<?php echo $l['id']; ?>">
                                     <?php if ($l['status'] == 'active'): ?>
                                         <button type="submit" name="action" value="ban" class="btn btn-ban">Ban</button>
@@ -156,6 +158,7 @@ $landlords = $pdo->query("
                                     <?php endif; ?>
                                 </form>
                                 <form method="POST" style="display:inline;" onsubmit="return confirm('Permanently delete account? This cannot be undone.')">
+<?php echo get_csrf_token_field(); ?>
                                     <input type="hidden" name="landlord_id" value="<?php echo $l['id']; ?>">
                                     <button type="submit" name="action" value="delete" class="btn btn-delete"><i class="fas fa-trash"></i></button>
                                 </form>

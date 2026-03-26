@@ -1,7 +1,7 @@
-
 <?php
-require_once 'session_check.php';
 require_once 'db_config.php';
+require_once 'session_check.php';
+require_once 'sanitize.php';
 
 // Check if user is logged in
 requireLogin();
@@ -239,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_tenant'])) {
             $stmt->execute([$tenant_id]);
             $unpaid_bills = $stmt->fetchColumn();
 
-if ($unpaid_bills > 0) {
+            if ($unpaid_bills > 0) {
                 $pdo->rollBack();
                 $error = "Cannot move out tenant with unpaid bills. Please settle all outstanding balances first.";
             } else {
@@ -308,7 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
     if (isset($_FILES['id_picture']) && $_FILES['id_picture']['error'] === UPLOAD_ERR_OK) {
         $upload_dir = 'uploads/id_pictures/';
         if (!is_dir($upload_dir)) {
-            mkdir($upload_dir, 0755, true); // Changed from 0777 to 0755 for security
+            mkdir($upload_dir, 0755, true); 
         }
         
         // Security validations
@@ -344,7 +344,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
         }
     }
     
-// Alter table to add id_picture and initial readings columns if they don't exist (MUST be outside transaction)
+    // Alter table to add id_picture and initial readings columns if they don't exist (MUST be outside transaction)
     $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS id_picture VARCHAR(255) NULL");
     $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS initial_water_reading DECIMAL(10,2) DEFAULT 0");
     $pdo->exec("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS secondary_phone_number VARCHAR(15) NULL");
@@ -402,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_tenant'])) {
             // Auto-bill this new tenant for the current billing cycle when applicable.
             autoCreateBillsForTenant($pdo, $property_id, $tenant_id, $unit_id, $has_wifi, $has_garbage);
 
-$success = "Tenant added successfully!";
+            $success = "Tenant added successfully!";
             
             // Refresh the tenants list
             $stmt = $pdo->prepare("
@@ -798,7 +798,6 @@ $success = "Tenant added successfully!";
         .form-control:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
         }
         
         .modal-footer {
@@ -956,7 +955,7 @@ $success = "Tenant added successfully!";
         <div class="main-content">
             <div class="page-header">
                 <h1 class="page-title">Tenant Management</h1>
-<div class="page-actions">
+                <div class="page-actions">
                     <button class="btn btn-primary" id="addTenantBtn">
                         <i class="fas fa-plus"></i> Add Tenant
                     </button>
@@ -1050,7 +1049,7 @@ $success = "Tenant added successfully!";
                                     <tr>
                                         <td>
                                             <?php if (!empty($tenant['id_picture'])): ?>
-                                                <img src="<?php echo $tenant['id_picture']; ?>" alt="ID Picture" class="id-picture">
+                                                <img src="serve_id_picture.php?tenant_id=<?php echo $tenant['id']; ?>" alt="ID Picture" class="id-picture">
                                             <?php else: ?>
                                                 <div class="id-picture-placeholder">
                                                     <i class="fas fa-user"></i>
@@ -1113,6 +1112,7 @@ $success = "Tenant added successfully!";
                 <button class="modal-close" id="closeModal">&times;</button>
             </div>
             <form method="POST" enctype="multipart/form-data">
+                <?php echo get_csrf_token_field(); ?>
                 <div class="modal-body">
                     <div class="form-group">
                         <label class="form-label">Full Name</label>
@@ -1213,6 +1213,7 @@ $success = "Tenant added successfully!";
                 <button class="modal-close" id="closeEditModal">&times;</button>
             </div>
             <form method="POST">
+                <?php echo get_csrf_token_field(); ?>
                 <input type="hidden" name="edit_tenant_id" id="editTenantId">
                 <div class="modal-body">
                     <div class="form-group">
@@ -1267,7 +1268,7 @@ $success = "Tenant added successfully!";
         </div>
     </div>
 
-<!-- Delete Confirmation Modal -->
+    <!-- Delete Confirmation Modal -->
     <div class="modal-overlay" id="deleteModal">
         <div class="modal">
             <div class="modal-header">

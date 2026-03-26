@@ -541,6 +541,7 @@
   <?php
   // Database connection and processing - using main config
   require_once '../config.php';
+  require_once '../sanitize.php';
   require_once '../db_config.php';
 
   // Check if security personnel is logged in
@@ -558,11 +559,11 @@
   if ($_SERVER["REQUEST_METHOD"] == "POST") {
       if (isset($_POST['submit_visitor'])) {
           // Process visitor form submission
-          $name = $_POST['name'];
-          $id_number = $_POST['id_number'] ?? '';
-          $phone_number = $_POST['phone_number'];
-          $numberplate = $_POST['numberplate'] ?? '';
-          $unit_id = $_POST['unit_id']; // Changed from house_number to unit_id
+          $name = sanitize_string($_POST['name'], 100);
+          $id_number = sanitize_string($_POST['id_number'] ?? '', 20);
+          $phone_number = sanitize_string($_POST['phone_number'], 15);
+          $numberplate = sanitize_string($_POST['numberplate'] ?? '', 20);
+          $unit_id = (int)($_POST['unit_id'] ?? 0); // Changed from house_number to unit_id
           
           // Get current date and time
           $visit_date = date('Y-m-d');
@@ -660,9 +661,9 @@
       </div>
 
       <?php if (!empty($message)): ?>
-        <div class="toast toast-<?php echo $message_type; ?>" id="statusToast" style="position: relative; margin-bottom: 20px; animation: toastIn 0.3s ease;">
-          <div class="toast-title"><?php echo ucfirst($message_type); ?></div>
-          <div class="toast-message"><?php echo $message; ?></div>
+        <div class="toast toast-<?php echo esc($message_type); ?>" id="statusToast" style="position: relative; margin-bottom: 20px;">
+          <div class="toast-title"><?php echo esc(ucfirst($message_type)); ?></div>
+          <div class="toast-message"><?php echo esc($message); ?></div>
         </div>
         
         <script>
@@ -770,14 +771,14 @@
               <div class="visitor-item">
                 <div class="visitor-avatar"><?php echo $initials; ?></div>
                 <div class="visitor-details">
-                  <div class="visitor-name"><?php echo htmlspecialchars($visitor['name']); ?></div>
-                  <div class="visitor-meta"><?php echo htmlspecialchars($visitor['unit_number'] ?? 'N/A'); ?></div>
+                  <div class="visitor-name"><?php echo esc($visitor['name']); ?></div>
+                  <div class="visitor-meta"><?php echo esc($visitor['unit_number'] ?? 'N/A'); ?></div>
                   <?php if (!empty($visitor['id_number'])): ?>
-                    <div class="visitor-meta">ID: <?php echo htmlspecialchars($visitor['id_number']); ?></div>
+                    <div class="visitor-meta">ID: <?php echo esc($visitor['id_number']); ?></div>
                   <?php endif; ?>
-                  <div class="visitor-meta">Phone: <?php echo htmlspecialchars($visitor['phone_number']); ?></div>
+                  <div class="visitor-meta">Phone: <?php echo esc($visitor['phone_number']); ?></div>
                   <?php if (!empty($visitor['numberplate'])): ?>
-                    <div class="visitor-meta">Vehicle: <?php echo htmlspecialchars($visitor['numberplate']); ?></div>
+                    <div class="visitor-meta">Vehicle: <?php echo esc($visitor['numberplate']); ?></div>
                   <?php endif; ?>
                   <div class="visitor-time">In: <?php echo $timeIn; ?></div>
                   <?php if ($timeOut): ?>

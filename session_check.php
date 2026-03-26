@@ -27,7 +27,7 @@ function checkSessionTimeout() {
 
 function requireLogin() {
     if (!checkSessionTimeout()) {
-        header("Location: auth.html");
+        header("Location: auth.php");
         exit();
     }
     

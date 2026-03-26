@@ -1,24 +1,9 @@
 <?php
-session_start();
 require_once 'db_config.php';
+require_once 'session_check.php';
+requireLogin();
+require_once 'sanitize.php';
 require_once 'automation_trigger.php';
-
-// Check session timeout (10 minutes)
-if (isset($_SESSION['admin_id']) && isset($_SESSION['last_activity'])) {
-    if (time() - $_SESSION['last_activity'] > 600) { // 10 minutes
-        session_unset();
-        session_destroy();
-        header("Location: auth.html");
-        exit();
-    }
-}
-$_SESSION['last_activity'] = time();
-
-// Check if landlord is logged in
-if (!isset($_SESSION['admin_id'])) {
-    header("Location: auth.html");
-    exit();
-}
 
 require_once 'SmsService.php';
 
@@ -35,7 +20,7 @@ $stmt = $pdo->prepare("SELECT * FROM properties WHERE landlord_id = ?");
 $stmt->execute([$landlord_id]);
 $properties = $stmt->fetchAll();
 
-$current_property_id = $_GET['property_id'] ?? ($properties[0]['id'] ?? null);
+$current_property_id = (int)($_GET['property_id'] ?? ($properties[0]['id'] ?? 0));
 
 // Auto-generate bills for the current month if they don't exist
 $month = date('F');
@@ -182,23 +167,23 @@ $units_bills = $stmt->fetchAll();
             <h1>Dashboard</h1>
             <div class="user-info" style="display: flex; gap: 15px; align-items: center;">
                 <div style="text-align: right;">
-                    <p style="font-weight: 600;"><?php echo $_SESSION['admin_name']; ?></p>
+                    <p style="font-weight: 600;"><?php echo esc($_SESSION['admin_name']); ?></p>
                     <p style="font-size: 12px; color: var(--gray);">Landlord</p>
                 </div>
                 <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">
-                    <?php echo substr($_SESSION['admin_name'], 0, 1); ?>
+                    <?php echo esc(substr($_SESSION['admin_name'], 0, 1)); ?>
                 </div>
             </div>
         </div>
 
         <?php if ($message): ?>
-            <div class="alert alert-<?php echo $message_type; ?>"><?php echo $message; ?></div>
+            <div class="alert alert-<?php echo esc($message_type); ?>"><?php echo esc($message); ?></div>
         <?php endif; ?>
 
         <div class="prop-selector">
             <?php foreach ($properties as $p): ?>
                 <a href="?property_id=<?php echo $p['id']; ?>" class="prop-pill <?php echo $p['id'] == $current_property_id ? 'active' : ''; ?>">
-                    <?php echo $p['name']; ?>
+                    <?php echo esc($p['name']); ?>
                 </a>
             <?php endforeach; ?>
         </div>
@@ -282,9 +267,9 @@ $units_bills = $stmt->fetchAll();
                         <tbody>
                             <?php foreach ($units_bills as $item): ?>
                                 <tr>
-                                    <td><strong><?php echo $item['unit_number']; ?></strong></td>
-                                    <td><?php echo $item['tenant_name'] ?? '<span style="color: #cbd5e1;">Vacant</span>'; ?></td>
-                                    <td><?php echo $item['bill_type'] ?? '-'; ?></td>
+                                    <td><strong><?php echo esc($item['unit_number']); ?></strong></td>
+                                    <td><?php echo $item['tenant_name'] ? esc($item['tenant_name']) : '<span style="color: #cbd5e1;">Vacant</span>'; ?></td>
+                                    <td><?php echo esc($item['bill_type'] ?? '-'); ?></td>
                                     <td>KES <?php echo number_format($item['amount'] ?? 0); ?></td>
                                     <td style="color: <?php echo ($item['balance'] > 0) ? 'var(--danger)' : 'var(--success)'; ?>">
                                         KES <?php echo number_format($item['balance'] ?? 0); ?>
